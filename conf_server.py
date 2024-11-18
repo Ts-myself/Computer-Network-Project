@@ -1,4 +1,5 @@
 import asyncio
+import json
 from util import *
 
 
@@ -73,17 +74,103 @@ class MainServer:
 
     async def request_handler(self, reader, writer):
         """
-        running task: handle out-meeting (or also in-meeting) requests from clients
+        Running task: Handle out-meeting (or also in-meeting) requests from clients using JSON.
         """
-        pass
+        try:
+            # Read the request data sent by the client
+            data = await reader.read(BUFFER_SIZE)
+            message = data.decode()
+            addr = writer.get_extra_info('peername')
+
+            print(f"[INFO] Received message from {addr}: {message}")
+
+            # Parse the JSON message
+            try:
+                request = json.loads(message)
+            except json.JSONDecodeError:
+                print(f"[WARNING] Invalid JSON format from {addr}")
+                response = {"status": "error", "message": "Invalid JSON format"}
+                writer.write(json.dumps(response).encode() + b"\n")
+                await writer.drain()
+                return
+
+            # Check for required keys in the JSON object
+            if "action" not in request:
+                print(f"[WARNING] Missing 'action' field from {addr}")
+                response = {"status": "error", "message": "Missing 'action' field"}
+                writer.write(json.dumps(response).encode() + b"\n")
+                await writer.drain()
+                return
+
+            action = request["action"]
+
+            # Process the action field
+            if action == "CREATE":
+                self.handle_creat_conference()
+                response = {"status": "success", "message": "Conference created"}
+            elif action == "JOIN":
+                if "conference_id" in request:
+                    conference_id = request["conference_id"]
+                    self.handle_join_conference(conference_id)
+                    response = {"status": "success", "message": f"Joined conference {conference_id}"}
+                else:
+                    response = {"status": "error", "message": "Missing 'conference_id' field"}
+            elif action == "QUIT":
+                self.handle_quit_conference()
+                response = {"status": "success", "message": "Quit conference"}
+            elif action == "CANCEL":
+                self.handle_cancel_conference()
+                response = {"status": "success", "message": "Conference canceled"}
+            else:
+                print(f"[WARNING] Unrecognized action '{action}' from {addr}")
+                response = {"status": "error", "message": f"Unrecognized action '{action}'"}
+
+            # Send acknowledgment back to the client
+            writer.write(json.dumps(response).encode() + b"\n")
+            await writer.drain()
+
+        except Exception as e:
+            print(f"[ERROR] Error handling client request: {e}")
+            response = {"status": "error", "message": "Internal server error"}
+            writer.write(json.dumps(response).encode() + b"\n")
+            await writer.drain()
+
+        finally:
+            print(f"[INFO] Closing connection from {addr}")
+            writer.close()
+            await writer.wait_closed()
+
+    async def run_main_server(self):
+        server = await self.main_server
+        async with server:
+            print(f"[INFO] MainServer running at {self.server_ip}:{self.server_port}")
+            await server.serve_forever()
 
     def start(self):
         """
         start MainServer
         """
-        pass
+        async def handle_client(reader, writer):
+            # Pass reader and writer to the request_handler method for processing
+            await self.request_handler(reader, writer)
+
+        print(f"[INFO] Starting MainServer on {self.server_ip}:{self.server_port}...")
+
+        try:
+            async def main():
+                # Assign the result of the awaited start_server coroutine
+                self.main_server = asyncio.start_server(handle_client, self.server_ip, self.server_port)
+                # Run the main server loop
+                await self.run_main_server()
+
+            # Run the asyncio event loop
+            asyncio.run(main())
+
+        except Exception as e:
+            print(f"[ERROR] Failed to start server: {e}")
+        raise
 
 
 if __name__ == '__main__':
-    server = MainServer(SERVER_IP, MAIN_SERVER_PORT)
+    server = MainServer(SERVER_IP_PUBLIC_HLC, MAIN_SERVER_PORT)
     server.start()
