@@ -8,7 +8,6 @@ import pyaudio
 import cv2
 import pyautogui
 import numpy as np
-import json
 from PIL import Image, ImageGrab
 from config import *
 
