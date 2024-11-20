@@ -3,6 +3,15 @@ import json
 import socket
 import requests
 import datetime
+import threading
+import time
+
+SERVER_IP = "10.20.147.91"
+SERVER_PORT = 8888
+SERVER_MSG_PORT = 8890
+SERVER_AUDIO_PORT = 8891
+SERVER_SCREEN_PORT = 8892
+SERVER_CAMERA_PORT = 8893
 
 
 class ConferenceClient:
@@ -11,7 +20,8 @@ class ConferenceClient:
     ):
         # sync client
         self.is_working = True
-        self.server_addr = "http://10.20.147.91:8888"
+        self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
+        self.client_ip = socket.gethostbyname(socket.gethostname())
         self.on_meeting = False  # status
         self.conns = (
             None  # you may need to maintain multiple conns for a single conference
@@ -46,26 +56,6 @@ class ConferenceClient:
         """
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
-        # try:
-        #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     sock.connect(self.server_addr)
-
-        #     request = {"action": "JOIN", "conference_id": conference_id}
-        #     sock.sendall(json.dumps(request).encode())
-
-        #     response = json.loads(sock.recv(1024).decode())
-        #     if response["status"] == "success":
-        #         self.conference_info = response["conference_info"]
-        #         self.on_meeting = True
-        #         print(f"[Success] Joined conference {self.conference_id}")
-        #         self.start_conference()
-        #     else:
-        #         print(f"[Error] Failed to create conference: {response['message']}")
-
-        #     sock.close()
-
-        # except Exception as e:
-        #     print(f"[Error] Failed to join conference: {str(e)}")
         try:
             response = requests.post(
                 f"{self.server_addr}/join_conference/{conference_id}"
@@ -120,6 +110,69 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] {str(e)}")
 
+    def send_msg(self):
+        """
+        Send messages in a conference using TCP socket connection
+        """
+        if not self.on_meeting:
+            print("[Warn] Not in a conference")
+            return
+
+        max_retries = 3
+        retry_delay = 1  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                print(
+                    f"[INFO] Connecting to message server (attempt {attempt + 1}/{max_retries})..."
+                )
+                # Create TCP socket for messaging
+                msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                msg_socket.connect((SERVER_IP, SERVER_MSG_PORT))
+                print("[Success] Connected to message server")
+
+                # Start receive thread
+                def receive_messages():
+                    while self.on_meeting:
+                        try:
+                            data = msg_socket.recv(BUFFER_SIZE).decode()
+                            if data:
+                                msg_data = json.loads(data)
+                                print(
+                                    f"[{msg_data['timestamp']}] {msg_data['ip']}: {msg_data['msg']}"
+                                )
+                        except:
+                            break
+                    msg_socket.close()
+
+                threading.Thread(target=receive_messages).start()
+
+                # Send messages until conference ends
+                print("Start messaging (type 'quit_msg' to stop):")
+                while self.on_meeting:
+                    message = input()
+                    if message.lower() == "quit_msg":  # TODO: use botton to quit
+                        break
+                    msg_json = {
+                        "msg": message,
+                        "ip": self.client_ip,
+                        "timestamp": getCurrentTime(),
+                    }
+                    msg_socket.send(json.dumps(msg_json).encode())
+
+                break  # 如果成功连接，跳出重试循环
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"[Warn] Connection attempt failed: {str(e)}")
+                    print(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    print(
+                        f"[Error] Messaging error after {max_retries} attempts: {str(e)}"
+                    )
+                    return
+
     def keep_share(
         self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
     ):
@@ -153,7 +206,13 @@ class ConferenceClient:
         start necessary running task for conference
         """
         try:
-            pass
+            # Start messaging thread
+            threading.Thread(target=self.send_msg).start()
+
+            # Keep conference running
+            while self.on_meeting:
+                time.sleep(1)
+                pass
 
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
