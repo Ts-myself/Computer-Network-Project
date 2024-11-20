@@ -1,6 +1,8 @@
 from util import *
 import json
 import socket
+import requests
+import datetime
 
 
 class ConferenceClient:
@@ -9,7 +11,7 @@ class ConferenceClient:
     ):
         # sync client
         self.is_working = True
-        self.server_addr = ("localhost", 8888)
+        self.server_addr = "http://10.20.147.91:8888"
         self.on_meeting = False  # status
         self.conns = (
             None  # you may need to maintain multiple conns for a single conference
@@ -29,101 +31,94 @@ class ConferenceClient:
         create a conference: send create-conference request to server and obtain necessary data to
         """
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(self.server_addr)
-
-            request = {"action": "CREATE"}
-            sock.sendall(json.dumps(request).encode())
-
-            response = json.loads(sock.recv(1024).decode())
-            if response["status"] == "success":
-                self.conference_id = response["conference_id"]
-                self.conference_info = response["conference_info"]
-                self.on_meeting = True
-                print(f"[Success] Created conference {self.conference_id}")
-                self.start_conference()
+            response = requests.post(f"{self.server_addr}/create_conference")
+            if response.status_code == 200:
+                data = response.json()
+                self.conference_id = data["conference_id"]
+                print(f"[Success] Created conference with ID: {self.conference_id}")
+                self.join_conference(self.conference_id)
             else:
-                print(f"[Error] Failed to create conference: {response['message']}")
-
-            sock.close()
-
+                print("[Error] Failed to create conference")
         except Exception as e:
-            print(f"[Error] Failed to create conference: {str(e)}")
+            print(f"[Error] {str(e)}")
 
     def join_conference(self, conference_id):
         """
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
+        # try:
+        #     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #     sock.connect(self.server_addr)
+
+        #     request = {"action": "JOIN", "conference_id": conference_id}
+        #     sock.sendall(json.dumps(request).encode())
+
+        #     response = json.loads(sock.recv(1024).decode())
+        #     if response["status"] == "success":
+        #         self.conference_info = response["conference_info"]
+        #         self.on_meeting = True
+        #         print(f"[Success] Joined conference {self.conference_id}")
+        #         self.start_conference()
+        #     else:
+        #         print(f"[Error] Failed to create conference: {response['message']}")
+
+        #     sock.close()
+
+        # except Exception as e:
+        #     print(f"[Error] Failed to join conference: {str(e)}")
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(self.server_addr)
-
-            request = {"action": "JOIN", "conference_id": conference_id}
-            sock.sendall(json.dumps(request).encode())
-
-            response = json.loads(sock.recv(1024).decode())
-            if response["status"] == "success":
-                self.conference_info = response["conference_info"]
+            response = requests.post(
+                f"{self.server_addr}/join_conference/{conference_id}"
+            )
+            if response.status_code == 200:
+                self.conference_id = conference_id
                 self.on_meeting = True
-                print(f"[Success] Joined conference {self.conference_id}")
+                print(f"[Success] Joined conference {conference_id}")
                 self.start_conference()
             else:
-                print(f"[Error] Failed to create conference: {response['message']}")
-
-            sock.close()
-
+                print("[Error] Failed to join conference")
         except Exception as e:
-            print(f"[Error] Failed to join conference: {str(e)}")
+            print(f"[Error] {str(e)}")
 
     def quit_conference(self):
         """
         quit your on-going conference
         """
+        if not self.on_meeting:
+            print("[Warn] Not in a conference")
+            return
+
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(self.server_addr)
-
-            request = {"action": "QUIT"}
-            sock.sendall(json.dumps(request).encode())
-
-            response = json.loads(sock.recv(1024).decode())
-            if response["status"] == "success":
-                self.conference_info = response["conference_info"]
-                self.on_meeting = True
-                print(f"[Success] Quit conference {self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/quit_conference/{self.conference_id}"
+            )
+            if response.status_code == 200:
                 self.close_conference()
+                print("[Success] Quit conference")
             else:
-                print(f"[Error] Failed to quit conference: {response['message']}")
-
-            sock.close()
-
+                print("[Error] Failed to quit conference")
         except Exception as e:
-            print(f"[Error] Failed to join conference: {str(e)}")
+            print(f"[Error] {str(e)}")
 
     def cancel_conference(self):
         """
         cancel your on-going conference (when you are the conference manager): ask server to close all clients
         """
+        if not self.on_meeting:
+            print("[Warn] Not in a conference")
+            return
+
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect(self.server_addr)
-
-            request = {"action": "CANCEL"}
-            sock.sendall(json.dumps(request).encode())
-
-            response = json.loads(sock.recv(1024).decode())
-            if response["status"] == "success":
-                self.conference_info = response["conference_info"]
-                self.on_meeting = True
-                print(f"[Success] Cancel conference {self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/cancel_conference/{self.conference_id}"
+            )
+            if response.status_code == 200:
                 self.close_conference()
+                print("[Success] Cancelled conference")
             else:
-                print(f"[Error] Failed to cancel conference: {response['message']}")
-
-            sock.close()
-
+                print("[Error] Failed to cancel conference")
         except Exception as e:
-            print(f"[Error] Failed to join conference: {str(e)}")
+            print(f"[Error] {str(e)}")
 
     def keep_share(
         self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
@@ -158,9 +153,7 @@ class ConferenceClient:
         start necessary running task for conference
         """
         try:
-            # Initialize connections based on conference info
-            self.on_meeting = True
-            print(f"[Success] Started conference {self.conference_id}")
+            pass
 
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
@@ -171,6 +164,7 @@ class ConferenceClient:
         close all conns to servers or other clients and cancel the running tasks
         pay attention to the exception handling
         """
+        self.on_meeting = False
         print(f"[Success] Closed conference {self.conference_id}")
 
     def start(self):

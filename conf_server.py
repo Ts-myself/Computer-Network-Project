@@ -1,10 +1,18 @@
 import asyncio
 import json
-import uuid # generating unique conference IDs
+import uuid  # generating unique conference IDs
 from util import *
+from flask import Flask, request, jsonify
+from datetime import datetime
+import requests
+
+
+def getCurrentTime():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
 class ConferenceServer:
-    def __init__(self, conference_id, conf_serve_ports, clients_info=None):
+    def __init__(self, conference_id, conf_serve_ports, host_ip):
         """
         Initialize a ConferenceServer instance.
         :param conference_id: Unique identifier for the conference.
@@ -13,11 +21,16 @@ class ConferenceServer:
         """
         self.conference_id = conference_id
         self.conf_serve_ports = conf_serve_ports
-        self.data_serve_ports = {data_type: port for data_type, port in zip(['screen', 'camera', 'audio'], conf_serve_ports)} # map data_type to port
-        self.data_types = ['screen', 'camera', 'audio']
-        self.clients_info = clients_info if clients_info else {}
-        self.client_conns = {}
-        self.mode = 'Client-Server'  # Default mode
+        self.data_serve_ports = {
+            data_type: port
+            for data_type, port in zip(["screen", "camera", "audio"], conf_serve_ports)
+        }  # map data_type to port
+        self.data_types = ["screen", "camera", "audio"]
+
+        self.host_ip = host_ip
+        self.clients_info = {}
+        # self.client_conns = {}
+        self.mode = "Client-Server"  # Default mode
         self.running = True
 
     async def handle_data(self, reader, writer, data_type):
@@ -34,7 +47,9 @@ class ConferenceServer:
                 if not data:
                     break
 
-                print(f"[INFO] Received {len(data)} bytes of {data_type} data from a client.")
+                print(
+                    f"[INFO] Received {len(data)} bytes of {data_type} data from a client."
+                )
 
                 # Forward the data to all connected clients except the sender
                 for client_id, client_writer in self.client_conns.items():
@@ -97,7 +112,9 @@ class ConferenceServer:
         """
         try:
             while self.running:
-                print(f"[INFO] Logging server status for conference {self.conference_id}:")
+                print(
+                    f"[INFO] Logging server status for conference {self.conference_id}:"
+                )
                 print(f"Connected clients: {list(self.client_conns.keys())}")
                 await asyncio.sleep(5)  # Log every 5 seconds
         except asyncio.CancelledError:
@@ -116,7 +133,9 @@ class ConferenceServer:
                 client_writer.close()
                 await client_writer.wait_closed()
             self.client_conns.clear()
-            print(f"[INFO] Conference {self.conference_id} has been successfully cancelled.")
+            print(
+                f"[INFO] Conference {self.conference_id} has been successfully cancelled."
+            )
         except Exception as e:
             print(f"[ERROR] Error while cancelling conference: {e}")
 
@@ -140,6 +159,7 @@ class ConferenceServer:
 
         asyncio.run(main_server_task())
 
+
 class MainServer:
     def __init__(self, server_ip, main_port):
         """
@@ -150,185 +170,231 @@ class MainServer:
         self.server_ip = server_ip
         self.server_port = main_port
         self.main_server = None
-        self.conference_servers = {} # map conference_id to ConferenceServer
-        
+        self.conference_servers = {}  # map conference_id to ConferenceServer
+        self.app = Flask(__name__)
+        self.setup_routes()
+
     def generate_conference_id(self):
         """
         Generate a unique conference ID using UUID.
         :return: A unique 8-digit string ID.
         """
-        return str(uuid.uuid4())[:8]
+        return str(uuid.uuid4().int)[:8]
 
-    def handle_creat_conference(self):
-        """
-        Create a new conference: Initialize and start a new ConferenceServer instance.
-        :return: A dictionary with {status, message, conference_id, ports}.
-        """
-        conference_id = self.generate_conference_id()
-        conf_serve_ports = CONF_SERVE_PORTS
-        conference_server = ConferenceServer(conference_id, conf_serve_ports)
-        self.conference_servers[conference_id] = conference_server
+    def setup_routes(self):
+        @self.app.route("/create_conference", methods=["POST"])
+        def handle_creat_conference():
+            """
+            Create a new conference: Initialize and start a new ConferenceServer instance.
+            :return: A dictionary with {status, message, conference_id, ports}.
+            """
+            client_ip = request.remote_addr
+            new_id = self.generate_conference_id()
+            self.conference_servers[new_id] = ConferenceServer(
+                new_id, CONF_SERVE_PORTS, client_ip
+            )
+            print(f"[INFO] Created conference {new_id} for {client_ip}")
+            return jsonify(
+                {
+                    "status": "success",
+                    "conference_id": new_id,
+                    "ports": CONF_SERVE_PORTS,
+                }
+            )
 
-        asyncio.create_task(conference_server.start())
-        print(f"[INFO] Created conference {conference_id} with ports: {conf_serve_ports}")
-        return {"status": "success", 
-                "message": "Conference created",
-                "conference_id": conference_id, 
-                "ports": conf_serve_ports}
+        @self.app.route("/join_conference/<conference_id>", methods=["POST"])
+        def handle_join_conference(conference_id):
+            """
+            Join conference: Search corresponding conference_info and ConferenceServer,
+            and reply necessary info to client.
+            :param conference_id: The ID of the conference the client wants to join.
+            :return: Dictionary with the result (success or error).
+            """
+            # if conference_id in self.conference_servers:
+            #     conference_server = self.conference_servers[conference_id]
+            #     return {
+            #         "status": "success",
+            #         "message": "Joined conference successfully",
+            #         "ports": conference_server.conf_serve_ports,
+            #     }
+            # else:
+            #     return {"status": "error", "message": "Conference not found"}
 
+            if conference_id not in self.conference_servers:
+                return (
+                    jsonify({"status": "error", "message": "Conference not found"}),
+                    404,
+                )
 
-    def handle_join_conference(self, conference_id):
-        """
-        Join conference: Search corresponding conference_info and ConferenceServer,
-        and reply necessary info to client.
-        :param conference_id: The ID of the conference the client wants to join.
-        :return: Dictionary with the result (success or error).
-        """
-        if conference_id in self.conference_servers:
-            conference_server = self.conference_servers[conference_id]
-            return {"status": "success", "message": "Joined conference successfully", 
-                    "ports": conference_server.conf_serve_ports}
-        else:
-            return {"status": "error", "message": "Conference not found"}
+            client_ip = request.remote_addr
+            if client_ip in self.conference_servers[conference_id].clients_info.keys():
+                return (
+                    jsonify({"status": "error", "message": "Client already joined"}),
+                    400,
+                )
 
-    def handle_quit_conference(self, client_id, conference_id):
-        """
-        Quit conference: Remove a client from the specified ConferenceServer.
-        :param client_id: Unique identifier of the client leaving the conference.
-        :param conference_id: The ID of the conference the client wants to leave.
-        :return: Dictionary with the result (success or error).
-        """
-        if conference_id in self.conference_servers:
-            conference_server = self.conference_servers[conference_id]
-            if client_id in conference_server.client_conns:
-                writer = conference_server.client_conns.pop(client_id)
-                writer.close()
-                asyncio.create_task(writer.wait_closed())
-                print(f"[INFO] Client {client_id} left conference {conference_id}")
-                return {"status": "success", "message": "Client left the conference"}
-            else:
-                return {"status": "error", "message": "Client not found in conference"}
-        else:
-            return {"status": "error", "message": "Conference not found"}
+            conf_server = self.conference_servers[conference_id]
+            conf_server.clients_info[client_ip] = {"join_time": getCurrentTime()}
 
-    def handle_cancel_conference(self, conference_id):
-        """
-        Cancel conference: Close the specified ConferenceServer and notify all clients.
-        :param conference_id: The ID of the conference to be canceled.
-        :return: Dictionary with the result (success or error).
-        """
-        if conference_id in self.conference_servers:
-            conference_server = self.conference_servers.pop(conference_id)
-            asyncio.create_task(conference_server.cancel_conference())
-            print(f"[INFO] Conference {conference_id} canceled.")
-            return {"status": "success", "message": "Conference canceled"}
-        else:
-            return {"status": "error", "message": "Conference not found"}
+            print(conf_server.clients_info)
+            return jsonify(
+                {
+                    "status": "success",
+                    "conference_id": conference_id,
+                    "clients": conf_server.clients_info,
+                }
+            )
 
-    async def request_handler(self, reader, writer):
-        """
-        Running task: Handle out-meeting (or also in-meeting) requests from clients using JSON.
-        """
-        try:
-            # Read the request data sent by the client
-            data = await reader.read(BUFFER_SIZE)
-            message = data.decode()
-            addr = writer.get_extra_info('peername')
+        @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
+        def handle_quit_conference(conference_id):
+            """
+            Quit conference: Remove a client from the specified ConferenceServer.
+            :param client_id: Unique identifier of the client leaving the conference.
+            :param conference_id: The ID of the conference the client wants to leave.
+            :return: Dictionary with the result (success or error).
+            """
+            # if conference_id in self.conference_servers:
+            #     conference_server = self.conference_servers[conference_id]
+            #     if client_id in conference_server.client_conns:
+            #         writer = conference_server.client_conns.pop(client_id)
+            #         writer.close()
+            #         asyncio.create_task(writer.wait_closed())
+            #         print(f"[INFO] Client {client_id} left conference {conference_id}")
+            #         return {
+            #             "status": "success",
+            #             "message": "Client left the conference",
+            #         }
+            #     else:
+            #         return {
+            #             "status": "error",
+            #             "message": "Client not found in conference",
+            #         }
+            # else:
+            #     return {"status": "error", "message": "Conference not found"}
+            if conference_id in self.conference_servers:
+                client_ip = request.remote_addr
+                conf_server = self.conference_servers[conference_id]
+                conf_server.clients_info.pop(client_ip)
+                print(conf_server.clients_info)
+                return jsonify({"status": "success"})
+            return jsonify({"status": "error", "message": "Conference not found"}), 404
 
-            print(f"[INFO] Received message from {addr}: {message}")
+        @self.app.route("/cancel_conference/<conference_id>", methods=["POST"])
+        def handle_cancel_conference(conference_id):
+            """
+            Cancel conference: Close the specified ConferenceServer and notify all clients.
+            :param conference_id: The ID of the conference to be canceled.
+            :return: Dictionary with the result (success or error).
+            """
+            # if conference_id in self.conference_servers:
+            #     conference_server = self.conference_servers.pop(conference_id)
+            #     asyncio.create_task(conference_server.cancel_conference())
+            #     print(f"[INFO] Conference {conference_id} canceled.")
+            #     return {"status": "success", "message": "Conference canceled"}
+            # else:
+            #     return {"status": "error", "message": "Conference not found"}
+            if conference_id in self.conference_servers:
+                # TODO
+                # all_clients = self.conference_servers[conference_id].clients_info.keys()
+                # for client_ip in all_clients:
+                #     requests.post(f"{client_ip}/cancel_conference/{conference_id}")
+                del self.conference_servers[conference_id]
+                print(self.conference_servers)
+                return jsonify({"status": "success"})
+            return jsonify({"status": "error", "message": "Conference not found"}), 404
 
-            # Parse the JSON message
+        async def request_handler(self, reader, writer):
+            """
+            Running task: Handle out-meeting (or also in-meeting) requests from clients using JSON.
+            """
             try:
-                request = json.loads(message)
-            except json.JSONDecodeError:
-                print(f"[WARNING] Invalid JSON format from {addr}")
-                response = {"status": "error", "message": "Invalid JSON format"}
+                # Read the request data sent by the client
+                data = await reader.read(BUFFER_SIZE)
+                message = data.decode()
+                addr = writer.get_extra_info("peername")
+
+                print(f"[INFO] Received message from {addr}: {message}")
+
+                # Parse the JSON message
+                try:
+                    request = json.loads(message)
+                except json.JSONDecodeError:
+                    print(f"[WARNING] Invalid JSON format from {addr}")
+                    response = {"status": "error", "message": "Invalid JSON format"}
+                    writer.write(json.dumps(response).encode() + b"\n")
+                    await writer.drain()
+                    return
+
+                # Check for required keys in the JSON object
+                if "action" not in request:
+                    print(f"[WARNING] Missing 'action' field from {addr}")
+                    response = {"status": "error", "message": "Missing 'action' field"}
+                    writer.write(json.dumps(response).encode() + b"\n")
+                    await writer.drain()
+                    return
+
+                action = request.get("action")
+
+                # Process the action field
+                if action == "CREATE":
+                    response = self.handle_creat_conference()
+                elif action == "JOIN":
+                    conference_id = request.get("conference_id")
+                    if conference_id:
+                        response = self.handle_join_conference(conference_id)
+                    else:
+                        response = {
+                            "status": "error",
+                            "message": "Missing 'conference_id' field",
+                        }
+                elif action == "QUIT":
+                    client_id = request.get("client_id")
+                    conference_id = request.get("conference_id")
+                    if client_id and conference_id:
+                        response = self.handle_quit_conference(client_id, conference_id)
+                    else:
+                        response = {
+                            "status": "error",
+                            "message": "Missing 'client_id' or 'conference_id' field",
+                        }
+                elif action == "CANCEL":
+                    conference_id = request.get("conference_id")
+                    if conference_id:
+                        response = self.handle_cancel_conference(conference_id)
+                    else:
+                        response = {
+                            "status": "error",
+                            "message": "Missing 'conference_id' field",
+                        }
+                else:
+                    print(f"[WARNING] Unrecognized action '{action}' from {addr}")
+                    response = {
+                        "status": "error",
+                        "message": f"Unrecognized action '{action}'",
+                    }
+
+                # Send acknowledgment back to the client
                 writer.write(json.dumps(response).encode() + b"\n")
                 await writer.drain()
-                return
 
-            # Check for required keys in the JSON object
-            if "action" not in request:
-                print(f"[WARNING] Missing 'action' field from {addr}")
-                response = {"status": "error", "message": "Missing 'action' field"}
+            except Exception as e:
+                print(f"[ERROR] Error handling client request: {e}")
+                response = {"status": "error", "message": "Internal server error"}
                 writer.write(json.dumps(response).encode() + b"\n")
                 await writer.drain()
-                return
 
-            action = request.get('action')
-
-            # Process the action field
-            if action == "CREATE":
-                response = self.handle_creat_conference()
-            elif action == "JOIN":
-                conference_id = request.get("conference_id")
-                if conference_id:
-                    response = self.handle_join_conference(conference_id)
-                else:
-                    response = {"status": "error", "message": "Missing 'conference_id' field"}
-            elif action == "QUIT":
-                client_id = request.get("client_id")
-                conference_id = request.get("conference_id")
-                if client_id and conference_id:
-                    response = self.handle_quit_conference(client_id, conference_id)
-                else:
-                    response = {"status": "error", "message": "Missing 'client_id' or 'conference_id' field"}
-            elif action == "CANCEL":
-                conference_id = request.get("conference_id")
-                if conference_id:
-                    response = self.handle_cancel_conference(conference_id)
-                else:
-                    response = {"status": "error", "message": "Missing 'conference_id' field"}
-            else:
-                print(f"[WARNING] Unrecognized action '{action}' from {addr}")
-                response = {"status": "error", "message": f"Unrecognized action '{action}'"}
-
-            # Send acknowledgment back to the client
-            writer.write(json.dumps(response).encode() + b"\n")
-            await writer.drain()
-
-        except Exception as e:
-            print(f"[ERROR] Error handling client request: {e}")
-            response = {"status": "error", "message": "Internal server error"}
-            writer.write(json.dumps(response).encode() + b"\n")
-            await writer.drain()
-
-        finally:
-            print(f"[INFO] Closing connection from {addr}")
-            writer.close()
-            await writer.wait_closed()
-
-    async def run_main_server(self):
-        server = await self.main_server
-        async with server:
-            print(f"[INFO] MainServer running at {self.server_ip}:{self.server_port}")
-            await server.serve_forever()
+            finally:
+                print(f"[INFO] Closing connection from {addr}")
+                writer.close()
+                await writer.wait_closed()
 
     def start(self):
         """
         start MainServer
         """
-        async def handle_client(reader, writer):
-            # Pass reader and writer to the request_handler method for processing
-            await self.request_handler(reader, writer)
-
-        print(f"[INFO] Starting MainServer on {self.server_ip}:{self.server_port}...")
-
-        try:
-            async def main():
-                # Assign the result of the awaited start_server coroutine
-                self.main_server = asyncio.start_server(handle_client, self.server_ip, self.server_port)
-                # Run the main server loop
-                await self.run_main_server()
-
-            # Run the asyncio event loop
-            asyncio.run(main())
-
-        except Exception as e:
-            print(f"[ERROR] Failed to start server: {e}")
-        raise SystemExit
+        self.app.run(host=self.server_ip, port=self.server_port)
 
 
-if __name__ == '__main__':
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT)
+if __name__ == "__main__":
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT)
     server.start()
