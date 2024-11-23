@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Lichi会议室</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body,
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            padding: 1rem;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .app-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .username {
+            border: 1px solid #000;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+        }
+
+        .main-container {
+            height: calc(100vh - 120px);
+            /* 减去header和controls的高度 */
+            display: flex;
+        }
+
+        .video-grid {
+            flex: 1;
+            display: grid;
+            gap: 10px;
+            padding: 3rem;
+            height: 100%;
+        }
+
+        .video-container {
+            background-color: #f8f9fa;
+            border: 1px solid #ccc;
+            position: relative;
+            aspect-ratio: 16/9;
+            overflow: hidden;
+        }
+
+        .screen-display {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .camera-container {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 150px;
+            height: 100px;
+            border: 1px solid #ccc;
+            overflow: hidden;
+        }
+
+        .user-camera {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .sidebar {
+            width: 300px;
+            border-left: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .meeting-id {
+            padding: 1rem;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100% - 50px);
+            /* 减去meeting-id的高度 */
+            flex: 1;
+            padding: 1rem;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+        }
+
+        .message {
+            background: #f0f0f0;
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border-radius: 5px;
+        }
+
+        .message-input-container {
+            display: flex;
+            margin-top: 0.5rem;
+        }
+
+        .message-input {
+            flex: 1;
+            margin-right: 0.5rem;
+            padding: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        .send-button {
+            padding: 0.5rem 1rem;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .send-button:hover {
+            background-color: #0056b3;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            padding: 1rem;
+            border-top: 1px solid #ccc;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 1rem;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            border: 1px solid #000;
+            border-radius: 5px;
+            background: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #f0f0f0;
+        }
+
+        .pagination {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            display: flex;
+            gap: 10px;
+        }
+
+        .page-button {
+            padding: 8px 15px;
+            background-color: rgba(0, 123, 255, 0.8);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .page-button:disabled {
+            background-color: rgba(204, 204, 204, 0.8);
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="app-title">Lichi会议室</div>
+        <div class="username" id="user-name">用户名</div>
+    </div>
+
+    <div class="main-container">
+        <div class="video-grid" id="video-grid">
+            <!-- 视频容器将由 JavaScript 动态生成 -->
+        </div>
+        <div class="pagination">
+            <button class="page-button" id="prev">上一页</button>
+            <button class="page-button" id="next">下一页</button>
+        </div>
+
+        <div class="sidebar">
+            <div class="meeting-id">
+                会议号：xxxxxxxx
+            </div>
+            <div class="chat-container">
+                <div class="chat-messages">
+                    <!-- 聊天消息将由 JavaScript 动态生成 -->
+                </div>
+                <div class="message-input-container">
+                    <input type="text" class="message-input" placeholder="发送信息..." aria-label="发送信息">
+                    <button class="send-button" aria-label="发送消息">发送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <button id="toggleCamera" aria-label="打开或关闭摄像头">打开/关闭摄像头</button>
+            <button id="toggleScreen" aria-label="打开或关闭屏幕共享">打开/关闭屏幕</button>
+            <button id="toggleMic" aria-label="打开或关闭麦克风">打开/关闭麦克风</button>
+        </div>
+        <div class="control-group">
+            <button id="switchMeeting" aria-label="切换到其他会议">切换会议</button>
+            <button id="exitMeeting" aria-label="退出或关闭当前会议">退出/关闭会议</button>
+        </div>
+    </div>
+
+    <script>
+        // 在文件开头添加配置
+        const maxParticipantsPerPage = 6;
+        let currentPage = 0;
+        let participants = []; // 用于存储参与者列表
+        let recv_msgs = []; // 用于存储接收到的消息
+
+        // 添加视频网格布局管理函数
+        function updateVideoGrid() {
+            const videoGrid = document.getElementById('video-grid');
+            const start = currentPage * maxParticipantsPerPage;
+            const end = Math.min(start + maxParticipantsPerPage, participants.length);
+            const currentParticipants = participants.slice(start, end);
+
+            videoGrid.innerHTML = '';
+
+            // 根据参与者数量设置网格布局
+            if (currentParticipants.length === 1) {
+                videoGrid.style.gridTemplateColumns = '1fr';
+            } else if (currentParticipants.length === 2) {
+                videoGrid.style.gridTemplateColumns = '1fr 1fr';
+            } else if (currentParticipants.length <= 4) {
+                videoGrid.style.gridTemplateColumns = '1fr 1fr';
+                videoGrid.style.gridTemplateRows = 'auto auto';
+            } else {
+                videoGrid.style.gridTemplateColumns = '1fr 1fr 1fr';
+                videoGrid.style.gridTemplateRows = 'auto auto';
+            }
+
+            // 创建视频容器
+            currentParticipants.forEach((participant, index) => {
+                const videoContainer = document.createElement('div');
+                videoContainer.className = 'video-container';
+
+                const screenVideo = document.createElement('video');
+                screenVideo.className = 'screen-display';
+                screenVideo.id = `screen${participant.id}`;
+                screenVideo.autoplay = true;
+                screenVideo.muted = true;
+
+                const cameraContainer = document.createElement('div');
+                cameraContainer.className = 'camera-container';
+
+                const cameraVideo = document.createElement('video');
+                cameraVideo.className = 'user-camera';
+                cameraVideo.id = `camera${participant.id}`;
+                cameraVideo.autoplay = true;
+                cameraVideo.muted = true;
+
+                cameraContainer.appendChild(cameraVideo);
+                videoContainer.appendChild(screenVideo);
+                videoContainer.appendChild(cameraContainer);
+                videoGrid.appendChild(videoContainer);
+
+                // 为新创建的视频元素模拟视频流
+                simulateVideoStream(screenVideo, participant.id);
+                simulateVideoStream(cameraVideo, participant.id);
+            });
+
+            // 更新分页按钮状态
+            document.getElementById('prev').disabled = currentPage === 0;
+            document.getElementById('next').disabled = end >= participants.length;
+        }
+
+        // 添加分页控制
+        document.getElementById('prev').addEventListener('click', () => {
+            if (currentPage > 0) {
+                currentPage--;
+                updateVideoGrid();
+            }
+        });
+
+        document.getElementById('next').addEventListener('click', () => {
+            if ((currentPage + 1) * maxParticipantsPerPage < participants.length) {
+                currentPage++;
+                updateVideoGrid();
+            }
+        });
+
+        // 添加参与者
+        function initializeParticipants() {
+            // 初始化一些默认参与者
+            participants = Array.from({ length: 2 }, (_, i) => ({
+                id: i + 1,
+                name: `User ${i + 1}`
+            }));
+            updateVideoGrid();
+
+            // 监听 /api/client_info 以获取参与者数量
+            fetch('/api/client_info')
+                .then(response => response.json())
+                .then(data => {
+                    participants = Array.from({ length: data.participant_num }, (_, i) => ({
+                        id: i + 1,
+                        name: `User ${i + 1}`
+                    }));
+                    updateVideoGrid();
+                })
+                .catch(error => {
+                    console.error('Error fetching participant info:', error);
+                });
+
+            console.log('WebSocket connection closed');
+            // 可以在这里添加重连逻辑
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeParticipants();
+        });
+
+        // 模拟视频流函数
+        function simulateVideoStream(videoElement, userId) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;
+            const ctx = canvas.getContext('2d');
+
+            let hue = Math.random() * 360;
+            function drawRandomFrame() {
+                ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = 'white';
+                ctx.font = '30px Arial';
+                ctx.fillText(`User ${userId}`, 20, 50);
+
+                hue = (hue + 10) % 360;
+            }
+
+            setInterval(() => {
+                drawRandomFrame();
+                videoElement.srcObject = canvas.captureStream(5);
+            }, 1000 / 5);
+        }
+
+
+
+        // 控制按钮事件监听
+        document.getElementById('toggleCamera').addEventListener('click', function () {
+            // 向Flask后端发送切换摄像头状态的请求
+            fetch('/api/button/toggle_camera', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        });
+
+        document.getElementById('toggleScreen').addEventListener('click', function () {
+            // 向Flask后端发送切换屏幕共享的请求
+            fetch('/api/button/toggle_screen', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        });
+
+        document.getElementById('toggleMic').addEventListener('click', function () {
+            // 向Flask后端发送切换麦克风状态的请求
+            fetch('/api/button/toggle_mic', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        });
+
+        document.getElementById('switchMeeting').addEventListener('click', function () {
+            // 向Flask后端发送切换会议的请求
+            fetch('/api/button/switch_meeting', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        });
+
+        document.getElementById('exitMeeting').addEventListener('click', function () {
+            // 向Flask后端发送退出会议的请求
+            fetch('/api/button/exit_meeting', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }).then(() => {
+                window.location.href = '/'; // 退出后返回首页
+            });
+        });
+
+        // 消息发送处理
+        document.querySelector('.send-button').addEventListener('click', sendMessage);
+
+        function sendMessage() {
+            const messageInput = document.querySelector('.message-input');
+            const message = messageInput.value.trim();
+            if (message) {
+                fetch('/api/send_msg', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: message })
+                }).then(() => {
+                    messageInput.value = '';
+                });
+            }
+        }
+
+        // 修改现有的消息输入处理代码
+        document.querySelector('.message-input').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // 从/api/recv_msg接收消息处理，添加到 recv_msgs 数组中，并更新消息列表
+        function receiveMessage() {
+            fetch('/api/recv_msg')
+                .then(response => response.json())
+                .then(data => {
+                    recv_msgs.push(data.message);
+                    updateMessages();
+                })
+                .catch(error => {
+                    console.error('Error fetching messages:', error);
+                });
+        }
+
+        // 更新消息列表
+        function updateMessages() {
+            const messageList = document.querySelector('.chat-messages');
+
+            const messageItem = document.createElement('div');
+            messageItem.textContent = recv_msgs[recv_msgs.length - 1];
+            messageList.appendChild(messageItem);
+        }
+    </script>
+</body>
+
+</html>

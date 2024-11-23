@@ -4,7 +4,10 @@ import socket
 import requests
 import datetime
 import threading
+from flask import Flask, request, jsonify, render_template, redirect
 import time
+import sys
+import argparse
 
 SERVER_IP = "10.20.147.91"
 SERVER_PORT = 8888
@@ -12,6 +15,8 @@ SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
 SERVER_SCREEN_PORT = 8892
 SERVER_CAMERA_PORT = 8893
+
+FRONT_PORT = 9000
 
 
 class ConferenceClient:
@@ -22,19 +27,23 @@ class ConferenceClient:
         self.is_working = True
         self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
         self.client_ip = socket.gethostbyname(socket.gethostname())
+        self.username = "User"
         self.on_meeting = False  # status
-        self.conns = (
-            None  # you may need to maintain multiple conns for a single conference
-        )
+        self.conns = None  # you may need to maintain multiple conns for a single conference
         self.support_data_types = []  # for some types of data
         self.share_data = {}
         self.conference_id = None
+        self.participant_num = 1
 
-        self.conference_info = (
-            None  # you may need to save and update some conference_info regularly
-        )
+        self.conference_info = None  # you may need to save and update some conference_info regularly
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
+
+        self.recv_msgs = []
+
+        # connect to frontend
+        self.app = Flask(__name__)
+        self.setup_routes()
 
     def create_conference(self):
         """
@@ -57,9 +66,7 @@ class ConferenceClient:
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
         try:
-            response = requests.post(
-                f"{self.server_addr}/join_conference/{conference_id}"
-            )
+            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
@@ -79,9 +86,7 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(
-                f"{self.server_addr}/quit_conference/{self.conference_id}"
-            )
+            response = requests.post(f"{self.server_addr}/quit_conference/{self.conference_id}")
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Quit conference")
@@ -99,9 +104,7 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(
-                f"{self.server_addr}/cancel_conference/{self.conference_id}"
-            )
+            response = requests.post(f"{self.server_addr}/cancel_conference/{self.conference_id}")
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Cancelled conference")
@@ -110,72 +113,66 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] {str(e)}")
 
-    def send_msg(self):
-        """
-        Send messages in a conference using TCP socket connection
-        """
-        if not self.on_meeting:
-            print("[Warn] Not in a conference")
-            return
+    # def send_msg(self):
+    #     """
+    #     Send messages in a conference using TCP socket connection
+    #     """
+    #     if not self.on_meeting:
+    #         print("[Warn] Not in a conference")
+    #         return
 
-        max_retries = 3
-        retry_delay = 1  # seconds
+    #     max_retries = 3
+    #     retry_delay = 1  # seconds
 
-        for attempt in range(max_retries):
-            try:
-                print(
-                    f"[INFO] Connecting to message server (attempt {attempt + 1}/{max_retries})..."
-                )
-                # Create TCP socket for messaging
-                msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                msg_socket.connect((SERVER_IP, SERVER_MSG_PORT))
-                print("[Success] Connected to message server")
+    #     for attempt in range(max_retries):
+    #         try:
+    #             print(f"[INFO] Connecting to message server (attempt {attempt + 1}/{max_retries})...")
+    #             # Create TCP socket for messaging
+    #             msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #             msg_socket.connect((SERVER_IP, SERVER_MSG_PORT))
+    #             print("[Success] Connected to message server")
 
-                # Start receive thread
-                def receive_messages():
-                    while self.on_meeting:
-                        try:
-                            data = msg_socket.recv(BUFFER_SIZE).decode()
-                            if data:
-                                msg_data = json.loads(data)
-                                print(
-                                    f"[{msg_data['timestamp']}] {msg_data['ip']}: {msg_data['msg']}"
-                                )
-                        except:
-                            break
-                    msg_socket.close()
+    #             # Start receive thread
+    #             def receive_messages():
+    #                 while self.on_meeting:
+    #                     try:
+    #                         data = msg_socket.recv(BUFFER_SIZE).decode()
+    #                         if data:
+    #                             msg_data = json.loads(data)
+    #                             # print(f"[{msg_data['timestamp']}] {msg_data['ip']}: {msg_data['msg']}")
+    #                             self.recv_msgs.append(msg_data)
+    #                     except:
+    #                         break
+    #                 msg_socket.close()
 
-                threading.Thread(target=receive_messages).start()
+    #             threading.Thread(target=receive_messages).start()
 
-                # Send messages until conference ends
-                print("Start messaging (type 'quit_msg' to stop):")
-                while self.on_meeting:
-                    message = input()
-                    if message.lower() == "quit_msg":  # TODO: use botton to quit
-                        break
-                    msg_json = {
-                        "msg": message,
-                        "ip": self.client_ip,
-                        "timestamp": getCurrentTime(),
-                    }
-                    msg_socket.send(json.dumps(msg_json).encode())
+    #             # Send messages until conference ends
+    #             print("Start messaging (type 'quit_msg' to stop):")
+    #             while self.on_meeting:
+    #                 message = input()
+    #                 if message.lower() == "quit_msg":  # TODO: use botton to quit
+    #                     break
+    #                 msg_json = {
+    #                     "msg": message,
+    #                     "username": self.username,
+    #                     "ip": self.client_ip,
+    #                     "timestamp": getCurrentTime(),
+    #                 }
+    #                 msg_socket.send(json.dumps(msg_json).encode())
 
-                break  # 如果成功连接，跳出重试循环
+    #             break  # 如果成功连接，跳出重试循环
 
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    print(f"[Warn] Connection attempt failed: {str(e)}")
-                    print(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                else:
-                    print(
-                        f"[Error] Messaging error after {max_retries} attempts: {str(e)}"
-                    )
-                    return
+    #         except Exception as e:
+    #             if attempt < max_retries - 1:
+    #                 print(f"[Warn] Connection attempt failed: {str(e)}")
+    #                 print(f"Retrying in {retry_delay} seconds...")
+    #                 time.sleep(retry_delay)
+    #             else:
+    #                 print(f"[Error] Messaging error after {max_retries} attempts: {str(e)}")
+    #                 return
 
-    def keep_share(
-        self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
-    ):
+    def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
         """
         running task: keep sharing (capture and send) certain type of data from server or clients (P2P)
         you can create different functions for sharing various kinds of data
@@ -207,7 +204,7 @@ class ConferenceClient:
         """
         try:
             # Start messaging thread
-            threading.Thread(target=self.send_msg).start()
+            # threading.Thread(target=self.send_msg).start()
 
             # Keep conference running
             while self.on_meeting:
@@ -226,10 +223,110 @@ class ConferenceClient:
         self.on_meeting = False
         print(f"[Success] Closed conference {self.conference_id}")
 
-    def start(self):
+    def setup_routes(self):
+        @self.app.route("/")
+        def index():
+            return redirect("/dashboard")
+
+        @self.app.route("/conference")
+        def conference():
+            if self.on_meeting:
+                return render_template("/frontend/conference.html")
+            else:
+                return redirect("/dashboard")
+
+        @self.app.route("/dashboard")
+        def dashboard():
+            return render_template("/frontend/dashboard.html")
+
+        @self.app.route("/api/client_info", methods=["POST"])
+        def get_client_info():
+            return jsonify(
+                {
+                    "client_ip": self.client_ip,
+                    "username": self.username,
+                    "on_meeting": self.on_meeting,
+                    "conference_id": self.conference_id,
+                    "participant_num": self.participant_num,
+                    "share_data": self.share_data,
+                }
+            )
+
+        @self.app.route("/api/button/<action>", methods=["POST"])
+        def button_action(action):
+            if action == "create_conference":
+                self.create_conference()
+            elif action == "join_conference":
+                data = request.json
+                self.conference_id = data["conference_id"]
+                self.join_conference(self.conference_id)
+            elif action == "toggle_camera":
+                pass
+            elif action == "toggle_screen":
+                pass
+            elif action == "toggle_mic":
+                pass
+            elif action == "switch_meeting":
+                data = request.json
+                self.conference_id = data["conference_id"]
+                self.join_conference(self.conference_id)
+            elif action == "exit_meeting":
+                self.quit_conference()
+
+            print(f"[INFO] Button action: {action}")
+
+            return jsonify({"status": "success"})
+
+        @self.app.route("/api/recv_msgs", methods=["GET"])
+        def recv_messages():
+            """
+            Return received messages to frontend
+            """
+            try:
+                # Create socket connection to server
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((SERVER_IP, self.server_port))
+
+                # Receive data from server
+                data = sock.recv(1024)
+                if data:
+                    msg = data.decode()
+                    self.recv_msg.append(msg)
+
+                sock.close()
+                return jsonify({"messages": self.recv_msg})
+
+            except Exception as e:
+                print(f"[Error] Failed to receive message: {str(e)}")
+                return jsonify({"status": "error", "message": str(e)}), 500
+
+        @self.app.route("/api/send_msg", methods=["POST"])
+        def send_message():
+            try:
+                data = request.json
+                msg = data["message"]
+                msg_json = {
+                    "msg": msg,
+                    "ip": self.client_ip,
+                    "username": self.username,
+                    "timestamp": getCurrentTime(),
+                }
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((SERVER_IP, self.server_port))
+                sock.sendall(json.dumps(msg_json).encode())
+                sock.close()
+                return jsonify({"status": "success"})
+            except Exception as e:
+                print(f"[Error] Failed to send message: {str(e)}")
+                return jsonify({"status": "error", "message": str(e)}), 500
+
+    def start(self, remote=False):
         """
         execute functions based on the command line input
         """
+        self.app.run(
+            host="localhost" if not remote else SERVER_IP_PUBLIC_TJL, port=FRONT_PORT, debug=False, threaded=True
+        )
         while True:
             if not self.on_meeting:
                 status = "Free"
@@ -237,11 +334,7 @@ class ConferenceClient:
                 status = f"OnMeeting-{self.conference_id}"
 
             recognized = True
-            cmd_input = (
-                input(f'({status}) Please enter a operation (enter "?" to help): ')
-                .strip()
-                .lower()
-            )
+            cmd_input = input(f'({status}) Please enter a operation (enter "?" to help): ').strip().lower()
             fields = cmd_input.split(maxsplit=1)
             if len(fields) == 1:
                 if cmd_input in ("?", "？"):
@@ -275,5 +368,11 @@ class ConferenceClient:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Conference Client")
+    parser.add_argument("-p", "--port", type=int, default=9000, help="Port to run the frontend on (default: 9000)")
+    parser.add_argument("-r", "--remote", type=bool, default=False, help="It's remote client")
+    args = parser.parse_args()
+
+    FRONT_PORT = args.port
     client1 = ConferenceClient()
-    client1.start()
+    client1.start(remote=args.remote)
