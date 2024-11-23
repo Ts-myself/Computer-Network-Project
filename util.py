@@ -15,24 +15,61 @@ from datetime import datetime
 
 # audio setting
 FORMAT = pyaudio.paInt16
-audio = pyaudio.PyAudio()
-streamin = audio.open(
-    format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
-)
-streamout = audio.open(
-    format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK
-)
+CHANNELS = 1
+RATE = 44100  
+CHUNK = 1024
+# audio = pyaudio.PyAudio()
+# streamin = audio.open(
+#     format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
+# )
+# streamout = audio.open(
+#     format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK
+# )
 
-# print warning if no available camera
-cap = cv2.VideoCapture(0)
-if cap.isOpened():
-    can_capture_camera = True
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, camera_width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_height)
-else:
-    can_capture_camera = False
+# # print warning if no available camera
+# cap = cv2.VideoCapture(0)
+# can_capture_camera = True
 
-my_screen_size = pyautogui.size()
+
+# my_screen_size = pyautogui.size()
+
+# # 初始化摄像头
+# cap = cv2.VideoCapture(0)
+# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # 设置摄像头宽度
+# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # 设置摄像头高度
+
+# # 获取屏幕尺寸
+# screen_width, screen_height = pyautogui.size()
+
+# while True:
+#     # --- 捕获屏幕录像 ---
+#     screen = ImageGrab.grab()  # 获取屏幕截图 (PIL Image)
+#     screen_np = np.array(screen)  # 转换为 NumPy 数组
+#     screen_bgr = cv2.cvtColor(screen_np, cv2.COLOR_RGB2BGR)  # 转换为 BGR 格式供 OpenCV 显示
+
+#     # --- 捕获摄像头画面 ---
+#     ret, camera_frame = cap.read()
+#     if not ret:
+#         print("摄像头捕获失败")
+#         break
+
+#     # 调整屏幕录像大小以便拼接
+#     screen_resized = cv2.resize(screen_bgr, (640, 480))
+
+#     # --- 拼接屏幕录像和摄像头画面 ---
+#     combined_frame = np.hstack((screen_resized, camera_frame))  # 水平拼接
+#     # 如果需要垂直拼接，使用 np.vstack()
+
+#     # --- 显示拼接画面 ---
+#     cv2.imshow("Screen and Camera", combined_frame)
+
+#     # 按下 'q' 键退出
+#     if cv2.waitKey(1) & 0xFF == ord("q"):
+#         break
+
+# # 释放资源
+# cap.release()
+# cv2.destroyAllWindows()
 
 
 def getCurrentTime():

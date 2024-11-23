@@ -6,7 +6,8 @@ import datetime
 import threading
 import time
 
-SERVER_IP = "10.20.147.91"
+SERVER_IP = "10.28.101.62"
+SERVER_IP = SERVER_IP_LOCAL
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
@@ -21,6 +22,8 @@ class ConferenceClient:
         # sync client
         self.is_working = True
         self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
+        self.server_ip = SERVER_IP
+        self.audio_port = SERVER_AUDIO_PORT
         self.client_ip = socket.gethostbyname(socket.gethostname())
         self.on_meeting = False  # status
         self.conns = (
@@ -35,6 +38,9 @@ class ConferenceClient:
         )
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
+        
+        ### Audio Streaming
+        self.audio = pyaudio.PyAudio()
 
     def create_conference(self):
         """
@@ -173,6 +179,84 @@ class ConferenceClient:
                     )
                     return
 
+    def send_aud(self):
+        """
+        send audio data
+        """
+        try:
+            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+            # Open audio input stream
+            stream = self.audio.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                frames_per_buffer=CHUNK,
+                input=True,
+            )
+
+            stream_ = self.audio.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                frames_per_buffer=CHUNK,
+                output=True,
+            )
+
+            print("[Audio] Starting audio capture and transmission...")
+            while self.on_meeting:
+                # Read audio data from the microphone
+                audio_data = stream.read(CHUNK)
+                
+                stream_.write(audio_data)
+
+                # Send the audio data to the server
+                udp_socket.sendto(audio_data, (self.server_ip, self.audio_port))
+
+        except Exception as e:
+            print(f"[Error] Audio streaming failed: {str(e)}")
+
+        finally:
+            stream.stop_stream()
+            stream.close()
+            udp_socket.close()
+            print("[Audio] Stopped audio capture and transmission.")
+        pass
+    
+    def recv_aud(self):
+        '''
+        Receive audio data
+        '''
+        try:
+            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_socket.bind((self.client_ip, self.audio_port))
+
+            # Open audio output stream
+            stream = self.audio.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                frames_per_buffer=CHUNK,
+                output=True,
+            )
+
+            print("[Audio] Starting audio reception and playback...")
+            while self.on_meeting:
+                # Receive audio data from the server
+                audio_data, _ = udp_socket.recvfrom(CHUNK)
+                stream.write(audio_data)
+
+        except Exception as e:
+            print(f"[Error] Audio reception failed: {str(e)}")
+
+        finally:
+            stream.stop_stream()
+            stream.close()
+            udp_socket.close()
+            print("[Audio] Stopped audio reception and playback.")
+        
+
+
     def keep_share(
         self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
     ):
@@ -208,6 +292,12 @@ class ConferenceClient:
         try:
             # Start messaging thread
             threading.Thread(target=self.send_msg).start()
+            
+            # Start audio streaming thread
+            threading.Thread(target=self.send_aud).start()
+
+            # Start audio receiving thread
+            # threading.Thread(target=self.recv_aud).start()
 
             # Keep conference running
             while self.on_meeting:
@@ -217,6 +307,10 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
             self.on_meeting = False
+            
+        finally:
+            # Terminate PyAudio when the conference ends
+            self.audio.terminate()
 
     def close_conference(self):
         """

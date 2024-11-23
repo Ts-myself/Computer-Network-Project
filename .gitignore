@@ -3,3 +3,6 @@
 
 # Python cache files
 __pycache__/
+
+# Trash files
+/.Trash/
