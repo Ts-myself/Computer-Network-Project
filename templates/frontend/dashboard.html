@@ -135,13 +135,13 @@
         </div>
     </main>
 
-    <div id="joinMeetingModal" class="modal">
+    <div id="joinConferenceModal" class="modal">
         <div class="modal-content">
             <h2 class="modal-title">加入会议</h2>
             <div class="input-group">
                 <label for="conferenceIdInput">会议号：</label>
                 <input type="text" id="conferenceIdInput" placeholder="8位数字" maxlength="8">
-                <p class="error-message" id="meetingIdError">请输入8位数字的会议号</p>
+                <p class="error-message" id="conferenceIdError">请输入8位数字的会议号</p>
             </div>
             <button class="button" id="confirmJoinBtn">加入</button>
         </div>
@@ -151,9 +151,9 @@
         const usernameInput = document.getElementById('usernameInput');
         const createConferenceBtn = document.getElementById('createConferenceBtn');
         const joinConferenceBtn = document.getElementById('joinConferenceBtn');
-        const joinMeetingModal = document.getElementById('joinMeetingModal');
+        const joinConferenceModal = document.getElementById('joinConferenceModal');
         const conferenceIdInput = document.getElementById('conferenceIdInput');
-        const meetingIdError = document.getElementById('meetingIdError');
+        const conferenceIdError = document.getElementById('conferenceIdError');
         const confirmJoinBtn = document.getElementById('confirmJoinBtn');
 
         function checkUsername() {
@@ -161,46 +161,83 @@
                 alert('请输入用户名');
                 return false;
             }
+            fetch(`/api/client_info`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username: usernameInput.value })
+            });
             return true;
         }
 
-        createConferenceBtn.addEventListener('click', function () {
+        createConferenceBtn.addEventListener('click', async function () {
             if (checkUsername()) {
-                fetch(`/api/button/create_conference`, { method: 'POST' });
-                window.location.href = `/conference`;
+                try {
+                    const response = await fetch(`/api/button/create_conference`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        window.location.href = `/conference`;
+                    } else {
+                        alert('创建会议失败，请重试');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('创建会议失败，请检查网络连接');
+                }
             }
         });
 
         joinConferenceBtn.addEventListener('click', function () {
             if (checkUsername()) {
-                joinMeetingModal.style.display = 'block';
+                joinConferenceModal.style.display = 'block';
             }
         });
 
         conferenceIdInput.addEventListener('input', function () {
             this.value = this.value.replace(/\D/g, '');
             if (this.value.length === 8) {
-                meetingIdError.style.display = 'none';
+                conferenceIdError.style.display = 'none';
                 confirmJoinBtn.disabled = false;
             } else {
-                meetingIdError.style.display = 'block';
+                conferenceIdError.style.display = 'block';
                 confirmJoinBtn.disabled = true;
             }
         });
 
-        confirmJoinBtn.addEventListener('click', function () {
-            const meetingId = conferenceIdInput.value;
-            if (meetingId.length === 8) {
-                fetch(`/api/join_meeting`, { method: 'POST', body: JSON.stringify({ conference_id: conference_id }) });
-                console.log(`加入会议: ${meetingId}`);
-                window.location.href = `/conference`;
-                joinMeetingModal.style.display = 'none';
+        confirmJoinBtn.addEventListener('click', async function () {
+            const conferenceId = conferenceIdInput.value;
+            if (conferenceId.length === 8) {
+                try {
+                    const response = await fetch(`/api/button  /join_conference`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ conference_id: conferenceId })
+                    });
+
+                    if (response.ok) {
+                        window.location.href = `/conference`;
+                    } else {
+                        alert('加入会议失败，请检查会议号是否正确');
+                    }
+                    joinConferenceModal.style.display = 'none';
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('加入会议失败，请检查网络连接');
+                }
             }
         });
 
         window.onclick = function (event) {
-            if (event.target == joinMeetingModal) {
-                joinMeetingModal.style.display = 'none';
+            if (event.target == joinConferenceModal) {
+                joinConferenceModal.style.display = 'none';
             }
         }
     </script>

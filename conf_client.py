@@ -4,13 +4,14 @@ import socket
 import requests
 import datetime
 import threading
-from flask import Flask, request, jsonify, render_template, redirect
+from flask import Flask, request, jsonify, render_template, redirect, Response
 import time
 import sys
 import argparse
 
-SERVER_IP = "10.28.101.62"
-SERVER_IP = SERVER_IP_LOCAL
+
+# SERVER_IP = "10.28.101.62"
+SERVER_IP = SERVER_IP_PUBLIC_TJL
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
@@ -32,13 +33,17 @@ class ConferenceClient:
         self.client_ip = socket.gethostbyname(socket.gethostname())
         self.username = "User"
         self.on_meeting = False  # status
-        self.conns = None  # you may need to maintain multiple conns for a single conference
+        self.conns = (
+            None  # you may need to maintain multiple conns for a single conference
+        )
         self.support_data_types = []  # for some types of data
         self.share_data = {}
         self.conference_id = None
         self.participant_num = 1
 
-        self.conference_info = None  # you may need to save and update some conference_info regularly
+        self.conference_info = (
+            None  # you may need to save and update some conference_info regularly
+        )
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
 
@@ -46,6 +51,9 @@ class ConferenceClient:
         self.audio = pyaudio.PyAudio()
 
         self.recv_msgs = []
+        self.new_msgs = []
+
+        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # connect to frontend
         self.app = Flask(__name__)
@@ -72,7 +80,9 @@ class ConferenceClient:
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
         try:
-            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/join_conference/{conference_id}"
+            )
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
@@ -92,7 +102,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/quit_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/quit_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Quit conference")
@@ -110,7 +122,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/cancel_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/cancel_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Cancelled conference")
@@ -177,6 +191,17 @@ class ConferenceClient:
     #             else:
     #                 print(f"[Error] Messaging error after {max_retries} attempts: {str(e)}")
     #                 return
+    def recv_msg(self):
+        try:
+            while self.on_meeting:
+                data = self.sock_msg.recv(1024)
+                if data:
+                    # Parse the received JSON message
+                    msg_data = json.loads(data.decode())
+                    print(f"[INFO] Received message: {msg_data}")
+                    self.new_msgs.append(msg_data)  # Store the parsed JSON object
+        except Exception as e:
+            print(f"[Error] Failed to receive message: {str(e)}")
 
     def send_aud(self):
         """
@@ -194,20 +219,20 @@ class ConferenceClient:
                 input=True,
             )
 
-            stream_ = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                output=True,
-            )
+            # stream_ = self.audio.open(
+            #     format=FORMAT,
+            #     channels=CHANNELS,
+            #     rate=RATE,
+            #     frames_per_buffer=CHUNK,
+            #     output=True,
+            # )
 
             print("[Audio] Starting audio capture and transmission...")
             while self.on_meeting:
                 # Read audio data from the microphone
                 audio_data = stream.read(CHUNK)
 
-                stream_.write(audio_data)
+                # stream_.write(audio_data)
 
                 # Send the audio data to the server
                 udp_socket.sendto(audio_data, (self.server_ip, self.audio_port))
@@ -216,8 +241,8 @@ class ConferenceClient:
             print(f"[Error] Audio streaming failed: {str(e)}")
 
         finally:
-            stream.stop_stream()
-            stream.close()
+            # stream.stop_stream()
+            # stream.close()
             udp_socket.close()
             print("[Audio] Stopped audio capture and transmission.")
         pass
@@ -254,7 +279,9 @@ class ConferenceClient:
             udp_socket.close()
             print("[Audio] Stopped audio reception and playback.")
 
-    def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
+    def keep_share(
+        self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
+    ):
         """
         running task: keep sharing (capture and send) certain type of data from server or clients (P2P)
         you can create different functions for sharing various kinds of data
@@ -286,26 +313,23 @@ class ConferenceClient:
         """
         try:
             # Start messaging thread
-            threading.Thread(target=self.send_msg).start()
+            self.sock_msg.connect((SERVER_IP, SERVER_MSG_PORT))
+            threading.Thread(target=self.recv_msg).start()
 
             # Start audio streaming thread
-            threading.Thread(target=self.send_aud).start()
+            # threading.Thread(target=self.send_aud).start()
 
             # Start audio receiving thread
             # threading.Thread(target=self.recv_aud).start()
-
-            # Keep conference running
-            while self.on_meeting:
-                time.sleep(1)
-                pass
 
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
             self.on_meeting = False
 
         finally:
+            pass
             # Terminate PyAudio when the conference ends
-            self.audio.terminate()
+            # self.audio.terminate()
 
     def close_conference(self):
         """
@@ -332,6 +356,12 @@ class ConferenceClient:
             return render_template("/frontend/dashboard.html")
 
         @self.app.route("/api/client_info", methods=["POST"])
+        def post_client_info():
+            data = request.json
+            self.username = data["username"]
+            return jsonify({"status": "success"})
+
+        @self.app.route("/api/client_info", methods=["GET"])
         def get_client_info():
             return jsonify(
                 {
@@ -369,28 +399,17 @@ class ConferenceClient:
 
             return jsonify({"status": "success"})
 
-        @self.app.route("/api/recv_msgs", methods=["GET"])
+        @self.app.route("/api/recv_msg", methods=["GET"])
         def recv_messages():
-            """
-            Return received messages to frontend
-            """
-            try:
-                # Create socket connection to server
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect((SERVER_IP, self.server_port))
+            def generate():
+                while True:
+                    if self.new_msgs:
+                        # Send each message individually as JSON
+                        msg = self.new_msgs.pop(0)  # Get and remove first message
+                        yield f"data: {json.dumps(msg)}\n\n"
+                    time.sleep(0.1)
 
-                # Receive data from server
-                data = sock.recv(1024)
-                if data:
-                    msg = data.decode()
-                    self.recv_msg.append(msg)
-
-                sock.close()
-                return jsonify({"messages": self.recv_msg})
-
-            except Exception as e:
-                print(f"[Error] Failed to receive message: {str(e)}")
-                return jsonify({"status": "error", "message": str(e)}), 500
+            return Response(generate(), mimetype="text/event-stream")
 
         @self.app.route("/api/send_msg", methods=["POST"])
         def send_message():
@@ -403,10 +422,8 @@ class ConferenceClient:
                     "username": self.username,
                     "timestamp": getCurrentTime(),
                 }
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect((SERVER_IP, self.server_port))
-                sock.sendall(json.dumps(msg_json).encode())
-                sock.close()
+                self.sock_msg.send(json.dumps(msg_json).encode())
+                print(f"[INFO] Send message: {msg}")
                 return jsonify({"status": "success"})
             except Exception as e:
                 print(f"[Error] Failed to send message: {str(e)}")
@@ -417,7 +434,10 @@ class ConferenceClient:
         execute functions based on the command line input
         """
         self.app.run(
-            host="localhost" if not remote else SERVER_IP_PUBLIC_TJL, port=FRONT_PORT, debug=False, threaded=True
+            host="localhost" if not remote else SERVER_IP_PUBLIC_TJL,
+            port=FRONT_PORT,
+            debug=False,
+            threaded=True,
         )
         while True:
             if not self.on_meeting:
@@ -426,7 +446,11 @@ class ConferenceClient:
                 status = f"OnMeeting-{self.conference_id}"
 
             recognized = True
-            cmd_input = input(f'({status}) Please enter a operation (enter "?" to help): ').strip().lower()
+            cmd_input = (
+                input(f'({status}) Please enter a operation (enter "?" to help): ')
+                .strip()
+                .lower()
+            )
             fields = cmd_input.split(maxsplit=1)
             if len(fields) == 1:
                 if cmd_input in ("?", "？"):
@@ -461,8 +485,16 @@ class ConferenceClient:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Conference Client")
-    parser.add_argument("-p", "--port", type=int, default=9000, help="Port to run the frontend on (default: 9000)")
-    parser.add_argument("-r", "--remote", type=bool, default=False, help="It's remote client")
+    parser.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        default=9000,
+        help="Port to run the frontend on (default: 9000)",
+    )
+    parser.add_argument(
+        "-r", "--remote", type=bool, default=False, help="It's remote client"
+    )
     args = parser.parse_args()
 
     FRONT_PORT = args.port

@@ -91,7 +91,7 @@
             flex-direction: column;
         }
 
-        .meeting-id {
+        .conference-id {
             padding: 1rem;
             border-bottom: 1px solid #ccc;
         }
@@ -210,8 +210,8 @@
         </div>
 
         <div class="sidebar">
-            <div class="meeting-id">
-                会议号：xxxxxxxx
+            <div class="conference-id">
+                会议号：<span id="conference-id"></span>
             </div>
             <div class="chat-container">
                 <div class="chat-messages">
@@ -319,7 +319,7 @@
         // 添加参与者
         function initializeParticipants() {
             // 初始化一些默认参与者
-            participants = Array.from({ length: 2 }, (_, i) => ({
+            participants = Array.from({ length: 0 }, (_, i) => ({
                 id: i + 1,
                 name: `User ${i + 1}`
             }));
@@ -343,9 +343,19 @@
             // 可以在这里添加重连逻辑
         }
 
+        function initUserInfo() {
+            fetch('/api/client_info')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('user-name').textContent = data.username;
+                    document.getElementById('conference-id').textContent = data.conference_id;
+                });
+        }
+
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', () => {
             initializeParticipants();
+            initUserInfo();
         });
 
         // 模拟视频流函数
@@ -370,7 +380,7 @@
             setInterval(() => {
                 drawRandomFrame();
                 videoElement.srcObject = canvas.captureStream(5);
-            }, 1000 / 5);
+            }, 1000);
         }
 
 
@@ -470,11 +480,37 @@
         // 更新消息列表
         function updateMessages() {
             const messageList = document.querySelector('.chat-messages');
+            const lastMsg = recv_msgs[recv_msgs.length - 1];
 
             const messageItem = document.createElement('div');
-            messageItem.textContent = recv_msgs[recv_msgs.length - 1];
+            messageItem.className = 'message';  // 使用预定义的message样式
+
+            // 创建并格式化时间戳和消息内容
+            const timestamp = new Date(lastMsg.timestamp).toLocaleTimeString();
+            messageItem.innerHTML = `
+                <strong>${lastMsg.username}</strong>
+                <small style="color: #666">[${timestamp}]</small><br>
+                ${lastMsg.msg}
+            `;
+
             messageList.appendChild(messageItem);
+            // 自动滚动到底部
+            messageList.scrollTop = messageList.scrollHeight;
         }
+
+        const msgEventSource = new EventSource('/api/recv_msg');
+
+        msgEventSource.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            recv_msgs.push(data);
+            updateMessages();
+        };
+
+        msgEventSource.onerror = () => {
+            console.error('SSE connection error.');
+        };
+
+
     </script>
 </body>
 
