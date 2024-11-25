@@ -5,8 +5,14 @@ import requests
 import datetime
 import threading
 import time
+import cv2
+import numpy as np
+import pyautogui
+import mss
+import struct
 
-SERVER_IP = "10.20.147.91"
+# SERVER_IP = "10.20.147.91"
+SERVER_IP = '127.0.0.1'
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
@@ -35,6 +41,8 @@ class ConferenceClient:
         )
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
+        self.frames_lock = threading.Lock()
+    
 
     def create_conference(self):
         """
@@ -126,6 +134,7 @@ class ConferenceClient:
                 print(
                     f"[INFO] Connecting to message server (attempt {attempt + 1}/{max_retries})..."
                 )
+
                 # Create TCP socket for messaging
                 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 msg_socket.connect((SERVER_IP, SERVER_MSG_PORT))
@@ -145,6 +154,7 @@ class ConferenceClient:
                             break
                     msg_socket.close()
 
+                # Start receive thread
                 threading.Thread(target=receive_messages).start()
 
                 # Send messages until conference ends
@@ -173,6 +183,103 @@ class ConferenceClient:
                     )
                     return
 
+    global img_show
+
+    def send_screen(self):
+        if not self.on_meeting:
+            print("[Warn] Not in a conference")
+            return
+
+        max_retries = 3
+        retry_delay = 1  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                print(f"[INFO] Connecting to screen server (attempt {attempt + 1}/{max_retries})...")
+
+                # 创建发送和接收的独立 socket
+                send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                recv_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+                # 接收 socket 绑定到本地的任意可用端口
+                recv_socket.bind((SERVER_IP, SERVER_SCREEN_PORT))
+                print("[Success] Sockets created for sending and receiving")
+
+                received_frames = {}
+
+                # 接收屏幕数据线程
+                def receive_screen():
+                    def reconstruct_frame():
+                        while self.on_meeting:
+                            with self.frames_lock:  # 加锁保护对 received_frames 的访问
+                                if received_frames:
+                                    for timestamp, chunks in list(received_frames.items()):
+                                        if len(chunks) == chunks[0][1]:  # 判断是否收齐所有分片
+                                            frame_data = b"".join(chunk[2] for chunk in sorted(chunks.values()))
+                                            img = cv2.imdecode(np.frombuffer(frame_data, np.uint8), cv2.IMREAD_COLOR)
+                                            with open(f"received_{timestamp}.jpg", "wb") as f:
+                                                f.write(frame_data)
+                                            del received_frames[timestamp]  # 删除已处理的帧
+
+                    threading.Thread(target=reconstruct_frame).start()
+
+                    print("[INFO] 等待接收屏幕数据...")
+                    while self.on_meeting:
+                        try:
+                            print('try to receive')
+                            packet, _ = recv_socket.recvfrom(BUFFER_SIZE + 16)
+                            print('receive success')
+
+                            header = packet[:16]
+                            chunk_data = packet[16:]
+
+                            sequence, total_chunks, timestamp = struct.unpack("!IIQ", header)
+                            print(f"[INFO] 接收到第 {sequence + 1}/{total_chunks} 片数据，时间戳: {timestamp}")
+
+                            with self.frames_lock:  # 加锁保护对 received_frames 的访问
+                                if timestamp not in received_frames:
+                                    received_frames[timestamp] = {}
+                                received_frames[timestamp][sequence] = (sequence, total_chunks, chunk_data)
+                        except Exception as e:
+                            print(f"[Error] 接收失败: {str(e)}")
+
+                    recv_socket.close()
+
+                threading.Thread(target=receive_screen).start()
+
+                print("Start screen sharing:")
+                hwnd, screenshotDC, mfcDC, saveDC, saveBitMap = init_capture_resources()
+                while self.on_meeting:
+                    frame_data = capture_screen(hwnd,screenshotDC, mfcDC, saveDC, saveBitMap)
+                    total_size = len(frame_data)
+                    num_chunks = (total_size // BUFFER_SIZE) + 1
+                    timestamp = int(time.time() * 1000)
+
+                    for i in range(num_chunks):
+                        chunk_data = frame_data[i * BUFFER_SIZE: (i + 1) * BUFFER_SIZE]
+                        chunk_header = struct.pack("!IIQ", i, num_chunks, timestamp)
+                        chunk_data = chunk_header + chunk_data
+                        print(f"[INFO] 发送第 {i + 1}/{num_chunks} 片数据")
+                        send_socket.sendto(chunk_data, (SERVER_IP, SERVER_SCREEN_PORT))
+
+                release_capture_resources(hwnd, screenshotDC, mfcDC, saveDC, saveBitMap)
+                send_socket.close()
+                recv_socket.close()
+                break
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"[Warn] Connection attempt failed: {str(e)}")
+                    print(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"[Error] Screen sharing error after {max_retries} attempts: {str(e)}")
+                    return
+
+                
+                
+        
+            
     def keep_share(
         self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
     ):
@@ -207,7 +314,8 @@ class ConferenceClient:
         """
         try:
             # Start messaging thread
-            threading.Thread(target=self.send_msg).start()
+            # threading.Thread(target=self.send_msg).start()
+            threading.Thread(target=self.send_screen).start()
 
             # Keep conference running
             while self.on_meeting:

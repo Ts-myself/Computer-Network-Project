@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image, ImageGrab
 from config import *
 from datetime import datetime
+import win32gui, win32ui, win32con
 
 # audio setting
 FORMAT = pyaudio.paInt16
@@ -120,11 +121,33 @@ def overlay_camera_images(screen_image, camera_images):
         return screen_image
 
 
-def capture_screen():
-    # capture screen with the resolution of display
-    # img = pyautogui.screenshot()
-    img = ImageGrab.grab()
-    return img
+def capture_screen(hwnd, screenshotDC, mfcDC, saveDC, saveBitMap):
+    saveDC.BitBlt((0, 0), (1280, 720), mfcDC, (0, 0), win32con.SRCCOPY)
+    bmpinfo = saveBitMap.GetInfo()
+    bmpstr = saveBitMap.GetBitmapBits(True)
+    pil_img = Image.frombuffer('RGB', (bmpinfo['bmWidth'], bmpinfo['bmHeight']), bmpstr, 'raw', 'BGRX', 0, 1)
+    img_np = np.array(pil_img)
+    _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 0])
+    ret_bytes = img_encode.tobytes()
+    print(f"Image size: {len(ret_bytes)} bytes")
+    return ret_bytes
+
+def init_capture_resources():
+    hwnd = win32gui.GetDesktopWindow()
+    screenshotDC = win32gui.GetWindowDC(hwnd)
+    mfcDC = win32ui.CreateDCFromHandle(screenshotDC)
+    saveDC = mfcDC.CreateCompatibleDC()
+    saveBitMap = win32ui.CreateBitmap()
+    saveBitMap.CreateCompatibleBitmap(mfcDC, 1280, 720)
+    saveDC.SelectObject(saveBitMap)
+    return hwnd, screenshotDC, mfcDC, saveDC, saveBitMap
+
+def release_capture_resources(hwnd, screenshotDC, mfcDC, saveDC, saveBitMap):
+    win32gui.DeleteObject(saveBitMap.GetHandle())
+    saveDC.DeleteDC()
+    mfcDC.DeleteDC()
+    win32gui.ReleaseDC(hwnd, screenshotDC)
+    return
 
 
 def capture_camera():

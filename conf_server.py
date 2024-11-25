@@ -46,12 +46,21 @@ class ConferenceServer:
                     if not data:
                         break
                     for client_conn in self.client_conns.values():
-                        if client_conn != reader:
-                            client_conn.send(data)
+                        # if client_conn != reader:
+                        client_conn.send(data)
             except Exception as e:
                 print(f"[Error] Message handling error: {str(e)}")
         elif data_type == "screen":
-            pass
+            try:
+                while self.running:
+                    data = reader.recv(BUFFER_SIZE)
+                    if not data:
+                        break
+                    for client_conn in self.client_conns.values():
+                        # if client_conn != reader:
+                        client_conn.send(data)
+            except Exception as e:
+                print(f"[Error] Screen handling error: {str(e)}")
         elif data_type == "camera":
             pass
         elif data_type == "audio":
@@ -102,7 +111,7 @@ class ConferenceServer:
         Start the ConferenceServer and begin handling clients and data streams.
         """
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock_msg.bind((SERVER_IP_PUBLIC_TJL, self.data_serve_ports["msg"]))
+        self.sock_msg.bind((SERVER_IP_LOCAL, self.data_serve_ports["msg"]))
         self.sock_msg.listen(5)
 
         while self.running:
@@ -231,5 +240,5 @@ class MainServer:
 
 
 if __name__ == "__main__":
-    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT)
+    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT)
     server.start()
