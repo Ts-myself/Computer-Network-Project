@@ -12,7 +12,9 @@ import numpy as np
 from PIL import Image, ImageGrab
 from config import *
 from datetime import datetime
-import win32gui, win32ui, win32con
+import mss
+import time
+import math
 
 # audio setting
 FORMAT = pyaudio.paInt16
@@ -121,70 +123,114 @@ def overlay_camera_images(screen_image, camera_images):
         return screen_image
 
 
-def capture_screen(hwnd, screenshotDC, mfcDC, saveDC, saveBitMap):
-    saveDC.BitBlt((0, 0), (1280, 720), mfcDC, (0, 0), win32con.SRCCOPY)
-    bmpinfo = saveBitMap.GetInfo()
-    bmpstr = saveBitMap.GetBitmapBits(True)
-    pil_img = Image.frombuffer('RGB', (bmpinfo['bmWidth'], bmpinfo['bmHeight']), bmpstr, 'raw', 'BGRX', 0, 1)
-    img_np = np.array(pil_img)
-    _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 0])
-    ret_bytes = img_encode.tobytes()
-    print(f"Image size: {len(ret_bytes)} bytes")
-    return ret_bytes
+def capture_screen(quality=30, width=1280, height=720, period = 2):
+    """
+    Args:
+        quality (int, optional): _description_. Defaults to 30.
+        width (int, optional): _description_. Defaults to 1280.
+        height (int, optional): _description_. Defaults to 720.
 
-def init_capture_resources():
-    hwnd = win32gui.GetDesktopWindow()
-    screenshotDC = win32gui.GetWindowDC(hwnd)
-    mfcDC = win32ui.CreateDCFromHandle(screenshotDC)
-    saveDC = mfcDC.CreateCompatibleDC()
-    saveBitMap = win32ui.CreateBitmap()
-    saveBitMap.CreateCompatibleBitmap(mfcDC, 1280, 720)
-    saveDC.SelectObject(saveBitMap)
-    return hwnd, screenshotDC, mfcDC, saveDC, saveBitMap
+    Returns:
+        img_bytes: bytes of the captured image
+    """
+    constant = 0.03
+    st = time.time()
+    tot = 0
+    screen_shots = []
+    while True:
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
+            img = sct.grab(monitor)
+            img_np = np.array(img)
+            img_np = cv2.resize(img_np, (width, height))  
+            _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            img_bytes = img_encode.tobytes()
+            screen_shots.append(img_bytes)
+            tot += 1
+        if time.time() - st > period - constant:
+            size = 0
+            for frame in screen_shots:
+                size += len(frame)
+            print(f"Total size of {tot} frames: {size} bytes")
+            return screen_shots, tot, period
+        
+def bytes_to_video(screen_shots ,tot, period):
+    """
+    Args:
+        screen_shots (list): list of bytes of captured images
+        tot (int): total number of captured images
+        period (float): period of capturing images
 
-def release_capture_resources(hwnd, screenshotDC, mfcDC, saveDC, saveBitMap):
-    win32gui.DeleteObject(saveBitMap.GetHandle())
-    saveDC.DeleteDC()
-    mfcDC.DeleteDC()
-    win32gui.ReleaseDC(hwnd, screenshotDC)
-    return
+    Returns:
+        video_bytes: bytes of the captured video
+        time_cost: time cost of converting bytes to video
+    """
+    st = time.time()
+    fps = tot / period
+    fps = math.floor(fps)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    now = datetime.now()
+    video_name = f"{now.strftime('%Y-%m-%d_%H-%M-%S')}.mp4"
+    video = cv2.VideoWriter(video_name, fourcc, fps, (1280, 720))
+    for img in screen_shots:
+        img = cv2.imdecode(np.frombuffer(img, np.uint8), cv2.IMREAD_COLOR)
+        video.write(img)
+    video.release()
+    # video to bytes
+    with open(video_name, "rb") as f:
+        video_bytes = f.read()
+    en = time.time()
+    print(f"Convert time: {en - st}")
+    return video_bytes, en-st
 
+def capture_camera(camera_index=0, period = 2, resolution=(1280, 720), fps=30, quality=30):
+    """
+    Args:   
+        camera_index (int, optional): index of camera. Defaults to 0.
+        period (float, optional): period of capturing images. Defaults to 2.
+        resolution (tuple, optional): resolution of camera. Defaults to (1280, 720).
+        fps (int, optional): frames per second. Defaults to 30.
+        quality (int, optional): quality of captured images. Defaults to 30.
 
-def capture_camera():
-    # capture frame of camera
-    ret, frame = cap.read()
-    if not ret:
-        raise Exception("Fail to capture frame from camera")
-    return Image.fromarray(frame)
+    Returns:
+        frames (list): list of bytes of captured images
+        tot (int): total number of captured images
+        period (float): period of capturing images
+    """
+    cap = cv2.VideoCapture(camera_index)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, resolution[0])
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, resolution[1])
+    cap.set(cv2.CAP_PROP_FPS, fps)
+
+    if not cap.isOpened():
+        raise Exception(f"无法打开摄像头（索引 {camera_index}）。请检查设备。")
+
+    constant = 0.03
+    print(f"开始捕获摄像头帧，目标时间: {period}")
+    frames = []
+    tot = 0
+    st = time.time()
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print(f"帧捕获失败。")
+            break
+        frame = cv2.resize(frame, resolution)
+        _, frame_encode = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        frames.append(frame_encode.tobytes())
+        tot += 1
+        if time.time() - st > period - constant:
+            size = 0
+            for frame in frames:
+                size += len(frame)
+            print(f"Total size of {tot} frames: {size} bytes")
+            cap.release()
+            return frames, tot, period
+    
 
 
 def capture_voice():
     return streamin.read(CHUNK)
 
 
-def compress_image(image, format="JPEG", quality=85):
-    """
-    compress image and output Bytes
 
-    :param image: PIL.Image, input image
-    :param format: str, output format ('JPEG', 'PNG', 'WEBP', ...)
-    :param quality: int, compress quality (0-100), 85 default
-    :return: bytes, compressed image data
-    """
-    img_byte_arr = BytesIO()
-    image.save(img_byte_arr, format=format, quality=quality)
-    img_byte_arr = img_byte_arr.getvalue()
-
-    return img_byte_arr
-
-
-def decompress_image(image_bytes):
-    """
-    decompress bytes to PIL.Image
-    :param image_bytes: bytes, compressed data
-    :return: PIL.Image
-    """
-    img_byte_arr = BytesIO(image_bytes)
-    image = Image.open(img_byte_arr)
-
-    return image
