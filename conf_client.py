@@ -2,12 +2,10 @@ from util import *
 import json
 import socket
 import requests
-import datetime
 import threading
 import time
 
-SERVER_IP = "10.28.101.62"
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = "127.0.0.1"
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
@@ -23,7 +21,6 @@ class ConferenceClient:
         self.is_working = True
         self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
         self.server_ip = SERVER_IP
-        self.audio_port = SERVER_AUDIO_PORT
         self.client_ip = socket.gethostbyname(socket.gethostname())
         self.on_meeting = False  # status
         self.conns = (
@@ -41,6 +38,9 @@ class ConferenceClient:
         
         ### Audio Streaming
         self.audio = pyaudio.PyAudio()
+        self.server_audio_port = SERVER_AUDIO_PORT
+        self.client_audio_port = 8989
+        self.microphone_on = True
 
     def create_conference(self):
         """
@@ -179,23 +179,21 @@ class ConferenceClient:
                     )
                     return
 
-    def send_aud(self):
-        """
-        send audio data
-        """
+            
+    def start_audio(self):
         try:
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_socket.bind((self.client_ip, self.client_audio_port)) 
+            udp_socket.setblocking(False)  # 设置非阻塞模式
 
-            # Open audio input stream
-            stream = self.audio.open(
+            input_stream = self.audio.open(
                 format=FORMAT,
                 channels=CHANNELS,
                 rate=RATE,
                 frames_per_buffer=CHUNK,
                 input=True,
             )
-
-            stream_ = self.audio.open(
+            output_stream = self.audio.open(
                 format=FORMAT,
                 channels=CHANNELS,
                 rate=RATE,
@@ -203,58 +201,28 @@ class ConferenceClient:
                 output=True,
             )
 
-            print("[Audio] Starting audio capture and transmission...")
             while self.on_meeting:
-                # Read audio data from the microphone
-                audio_data = stream.read(CHUNK)
-                
-                stream_.write(audio_data)
+                if self.microphone_on:
+                    sent_audio = input_stream.read(CHUNK)
+                    udp_socket.sendto(sent_audio, (self.server_ip, self.server_audio_port))
 
-                # Send the audio data to the server
-                udp_socket.sendto(audio_data, (self.server_ip, self.audio_port))
+                try:
+                    recv_audio, _ = udp_socket.recvfrom(65535)
+                    # output_stream.write(recv_audio)
+                    print(recv_audio) # test
+                except BlockingIOError:
+                    pass
 
         except Exception as e:
             print(f"[Error] Audio streaming failed: {str(e)}")
 
         finally:
-            stream.stop_stream()
-            stream.close()
+            input_stream.stop_stream()
+            input_stream.close()
+            output_stream.stop_stream()
+            output_stream.close()
             udp_socket.close()
-            print("[Audio] Stopped audio capture and transmission.")
-        pass
-    
-    def recv_aud(self):
-        '''
-        Receive audio data
-        '''
-        try:
-            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind((self.client_ip, self.audio_port))
-
-            # Open audio output stream
-            stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                output=True,
-            )
-
-            print("[Audio] Starting audio reception and playback...")
-            while self.on_meeting:
-                # Receive audio data from the server
-                audio_data, _ = udp_socket.recvfrom(CHUNK)
-                stream.write(audio_data)
-
-        except Exception as e:
-            print(f"[Error] Audio reception failed: {str(e)}")
-
-        finally:
-            stream.stop_stream()
-            stream.close()
-            udp_socket.close()
-            print("[Audio] Stopped audio reception and playback.")
-        
+            print("[Audio] Stopped audio transmission and reception.")
 
 
     def keep_share(
@@ -290,14 +258,11 @@ class ConferenceClient:
         start necessary running task for conference
         """
         try:
-            # Start messaging thread
+            # Start message thread
             threading.Thread(target=self.send_msg).start()
             
-            # Start audio streaming thread
-            threading.Thread(target=self.send_aud).start()
-
-            # Start audio receiving thread
-            # threading.Thread(target=self.recv_aud).start()
+            # Start audio thread
+            threading.Thread(target=self.start_audio).start()
 
             # Keep conference running
             while self.on_meeting:

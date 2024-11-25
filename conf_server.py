@@ -3,13 +3,12 @@ import uuid  # generating unique conference IDs
 from util import *
 from flask import Flask, request, jsonify
 from datetime import datetime
-import requests
 import threading
 import socket
 
 
 class ConferenceServer:
-    def __init__(self, conference_id, conf_serve_ports, host_ip, server_ip):
+    def __init__(self, conference_id, data_ports, host_ip, server_ip):
         """
         Initialize a ConferenceServer instance.
         :param conference_id: Unique identifier for the conference.
@@ -18,18 +17,15 @@ class ConferenceServer:
         """
         self.server_ip = server_ip
         self.conference_id = conference_id
-        self.conf_serve_ports = conf_serve_ports
-        self.data_types = ["msg", "screen", "camera", "audio"]
-        self.data_serve_ports = {
-            data_type: port
-            for data_type, port in zip(
-                self.data_types, conf_serve_ports
-            )
-        }  # map data_type to port
-
+        self.conf_serve_ports = data_ports
+        self.data_ports = data_ports # map data_type to port
         self.host_ip = host_ip
+
         self.clients_info = {}
-        self.client_conns = {}
+        
+        self.client_tcps = dict() # dict of client_addr: client_conn
+        self.client_udps = set()  # set of client_addr
+        
         self.mode = "Client-Server"  # Default mode
         self.running = True
 
@@ -47,7 +43,7 @@ class ConferenceServer:
                     if not data:
                         break
                     # Forward the message to all other clients
-                    for client_conn in self.client_conns.values():
+                    for client_conn in self.client_tcps.values():
                         if client_conn != reader:
                             client_conn.send(data)
             except Exception as e:
@@ -57,24 +53,22 @@ class ConferenceServer:
                 while self.running:
                     # Receive audio data via UDP
                     data, addr = reader.recvfrom(65535)
+
+                    if addr not in self.client_udps:
+                        self.client_udps.add(addr)
+                        print(f"Added {addr} to client_udps")
+                    
                     # Forward the audio data to all other clients
-                    for client_addr, client_conn in self.client_conns.items():
+                    for client_addr in self.client_udps:
                         if client_addr != addr:  # Don't send back to the sender
                             writer.sendto(data, client_addr)
+                            
             except Exception as e:
                 print(f"[Error] Audio handling error: {str(e)}")
         elif data_type == "screen":
             pass
         elif data_type == "camera":
             pass
-        
-
-    def handle_client(self, reader, writer):
-        """
-        Handle client requests during the conference.
-        :param reader: asyncio StreamReader instance for receiving client messages.
-        :param writer: asyncio StreamWriter instance for responding to clients.
-        """
 
     def log(self):
         """
@@ -115,12 +109,13 @@ class ConferenceServer:
         """
         # message
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock_msg.bind((self.server_ip, self.data_serve_ports["msg"]))
+        self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
         self.sock_msg.listen(5)
         
         # audio
+        print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
         self.sock_aud = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock_aud.bind((self.server_ip, self.data_serve_ports["audio"]))
+        self.sock_aud.bind((self.server_ip, self.data_ports["audio"]))
 
         # Start audio handler thread
         threading.Thread(
@@ -130,9 +125,9 @@ class ConferenceServer:
         while self.running:
         # Accept new TCP client for message handling
             client_conn, client_addr = self.sock_msg.accept()
-            self.client_conns[client_addr] = client_conn
+            self.client_tcps[client_addr] = client_conn
             threading.Thread(
-                target=self.handle_data, args=(client_conn, self.client_conns, "msg")
+                target=self.handle_data, args=(client_conn, self.client_tcps, "msg")
             ).start()
 
 
