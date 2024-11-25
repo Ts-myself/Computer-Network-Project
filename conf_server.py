@@ -43,9 +43,9 @@ class ConferenceServer:
                     if not data:
                         break
                     # Forward the message to all other clients
-                    for client_conn in self.client_tcps.values():
-                        if client_conn != reader:
-                            client_conn.send(data)
+                    for client_conn in self.client_conns.values():
+                        # if client_conn != reader:
+                        client_conn.send(data)
             except Exception as e:
                 print(f"[Error] Message handling error: {str(e)}")
         elif data_type == "audio":
@@ -111,7 +111,7 @@ class ConferenceServer:
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
         self.sock_msg.listen(5)
-        
+
         # audio
         print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
         self.sock_aud = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -119,11 +119,13 @@ class ConferenceServer:
 
         # Start audio handler thread
         threading.Thread(
-            target=self.handle_data, args=(self.sock_aud, self.sock_aud, "audio"), daemon=True
+            target=self.handle_data,
+            args=(self.sock_aud, self.sock_aud, "audio"),
+            daemon=True,
         ).start()
 
         while self.running:
-        # Accept new TCP client for message handling
+            # Accept new TCP client for message handling
             client_conn, client_addr = self.sock_msg.accept()
             self.client_tcps[client_addr] = client_conn
             threading.Thread(
@@ -191,7 +193,7 @@ class MainServer:
                 )
 
             client_ip = request.remote_addr
-            
+
             if client_ip in self.conference_servers[conference_id].clients_info.keys():
                 return (
                     jsonify({"status": "error", "message": "Client already joined"}),
@@ -202,11 +204,13 @@ class MainServer:
             conf_server.clients_info[client_ip] = {"join_time": getCurrentTime()}
 
             print(conf_server.clients_info)
-            return jsonify({
-                "status": "success",
-                "conference_id": conference_id,
-                "clients": conf_server.clients_info,
-            })
+            return jsonify(
+                {
+                    "status": "success",
+                    "conference_id": conference_id,
+                    "clients": conf_server.clients_info,
+                }
+            )
 
         @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
         def handle_quit_conference(conference_id):
@@ -232,8 +236,11 @@ class MainServer:
             :return: Dictionary with the result (success or error).
             """
             if conference_id not in self.conference_servers:
-                return jsonify({"status": "error", "message": "Conference not found"}), 404
-                
+                return (
+                    jsonify({"status": "error", "message": "Conference not found"}),
+                    404,
+                )
+
             # TODO
             # all_clients = self.conference_servers[conference_id].clients_info.keys()
             # for client_ip in all_clients:
@@ -251,5 +258,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
