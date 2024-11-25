@@ -57,10 +57,6 @@ class ConferenceClient:
 
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        # connect to frontend
-        self.app = Flask(__name__)
-        self.setup_routes()
-
         # 添加视频相关的属性
         self.video_path = "test_video.mp4"
         self.video_capture = None
@@ -69,22 +65,9 @@ class ConferenceClient:
         self.video_thread = None
         self.is_streaming = False
 
-        self.recv_msgs = []
-        self.new_msgs = []
-
-        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
         # connect to frontend
         self.app = Flask(__name__)
         self.setup_routes()
-
-        # 添加视频相关的属性
-        self.video_path = "test_video.mp4"
-        self.video_capture = None
-        self.frame_lock = Lock()
-        self.current_frame = None
-        self.video_thread = None
-        self.is_streaming = False
 
     def create_conference(self):
         """
@@ -160,55 +143,24 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] {str(e)}")
 
-    # def send_msg(self):
-    #     """
-    #     Send messages in a conference using TCP socket connection
-    #     """
-    #     if not self.on_meeting:
-    #         print("[Warn] Not in a conference")
-    #         return
+    def send_msg(self):
+        """
+        Send messages in a conference using TCP socket connection
+        """
+        if not self.on_meeting:
+            print("[Warn] Not in a conference")
+            return
 
-    #     max_retries = 3
-    #     retry_delay = 1  # seconds
+        max_retries = 3
+        retry_delay = 1  # seconds
 
-    #     for attempt in range(max_retries):
-    #         try:
-    #             print(f"[INFO] Connecting to message server (attempt {attempt + 1}/{max_retries})...")
-    #             # Create TCP socket for messaging
-    #             msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #             msg_socket.connect((SERVER_IP, SERVER_MSG_PORT))
-    #             print("[Success] Connected to message server")
-
-                # Start receive thread
-                def receive_messages():
-                    while self.on_meeting:
-                        try:
-                            data = msg_socket.recv(BUFFER_SIZE).decode()
-                            if data:
-                                msg_data = json.loads(data)
-                                print(
-                                    f"[{msg_data['timestamp']}] {msg_data['ip']}: {msg_data['msg']}"
-                                )
-                        except:
-                            break
-                    msg_socket.close()
-
-                threading.Thread(target=receive_messages).start()
-
-                # Send messages until conference ends
-                print("Start messaging (type 'quit_msg' to stop):")
-                while self.on_meeting:
-                    message = input()
-                    if message.lower() == "quit_msg":  # TODO: use botton to quit
-                        break
-                    msg_json = {
-                        "msg": message,
-                        "ip": self.client_ip,
-                        "timestamp": getCurrentTime(),
-                    }
-                    msg_socket.send(json.dumps(msg_json).encode())
-
-                break  # 如果成功连接，跳出重试循环
+        for attempt in range(max_retries):
+            try:
+                print(f"[INFO] Connecting to message server (attempt {attempt + 1}/{max_retries})...")
+                # Create TCP socket for messaging
+                msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                msg_socket.connect((SERVER_IP, SERVER_MSG_PORT))
+                print("[Success] Connected to message server")
 
             except Exception as e:
                 if attempt < max_retries - 1:
@@ -219,8 +171,38 @@ class ConferenceClient:
                     print(
                         f"[Error] Messaging error after {max_retries} attempts: {str(e)}"
                     )
-                    return
+                return
 
+    # Start receive thread
+    def receive_messages():
+        while self.on_meeting:
+            try:
+                data = msg_socket.recv(BUFFER_SIZE).decode()
+                if data:
+                    msg_data = json.loads(data)
+                    print(
+                        f"[{msg_data['timestamp']}] {msg_data['ip']}: {msg_data['msg']}"
+                    )
+            except:
+                break
+        msg_socket.close()
+
+        threading.Thread(target=receive_messages).start()
+
+        # Send messages until conference ends
+        print("Start messaging (type 'quit_msg' to stop):")
+        while self.on_meeting:
+            message = input()
+            if message.lower() == "quit_msg":  # TODO: use botton to quit
+                break
+            msg_json = {
+                "msg": message,
+                "ip": self.client_ip,
+                "timestamp": getCurrentTime(),
+            }
+            msg_socket.send(json.dumps(msg_json).encode())
+
+            break  # 如果成功连接，跳出重试循环
             
     def start_audio(self):
         try:
@@ -242,14 +224,6 @@ class ConferenceClient:
                 frames_per_buffer=CHUNK,
                 output=True,
             )
-
-            # stream_ = self.audio.open(
-            #     format=FORMAT,
-            #     channels=CHANNELS,
-            #     rate=RATE,
-            #     frames_per_buffer=CHUNK,
-            #     output=True,
-            # )
 
             while self.on_meeting:
                 if self.microphone_on:
@@ -347,9 +321,6 @@ class ConferenceClient:
             
             # Start audio thread
             threading.Thread(target=self.start_audio).start()
-
-            # Start audio receiving thread
-            # threading.Thread(target=self.recv_aud).start()
 
             # 自动开启视频流
             self.is_streaming = True
@@ -577,7 +548,6 @@ class ConferenceClient:
 
         if self.video_capture:
             self.video_capture.release()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Conference Client")
