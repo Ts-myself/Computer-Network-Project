@@ -8,6 +8,9 @@ from flask import Flask, request, jsonify, render_template, redirect, Response
 import time
 import sys
 import argparse
+import cv2
+import base64
+from threading import Lock
 
 
 # SERVER_IP = "10.28.101.62"
@@ -58,6 +61,14 @@ class ConferenceClient:
         # connect to frontend
         self.app = Flask(__name__)
         self.setup_routes()
+
+        # 添加视频相关的属性
+        self.video_path = "test_video.mp4"
+        self.video_capture = None
+        self.frame_lock = Lock()
+        self.current_frame = None
+        self.video_thread = None
+        self.is_streaming = False
 
     def create_conference(self):
         """
@@ -322,6 +333,11 @@ class ConferenceClient:
             # Start audio receiving thread
             # threading.Thread(target=self.recv_aud).start()
 
+            # 自动开启视频流
+            self.is_streaming = True
+            self.video_thread = threading.Thread(target=self.process_video)
+            self.video_thread.start()
+
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
             self.on_meeting = False
@@ -429,6 +445,43 @@ class ConferenceClient:
                 print(f"[Error] Failed to send message: {str(e)}")
                 return jsonify({"status": "error", "message": str(e)}), 500
 
+        @self.app.route("/api/video_feed/<stream_type>")
+        def video_feed(stream_type):
+            """获取视频流（camera或screen）"""
+
+            def generate():
+                while self.is_streaming and self.on_meeting:
+                    with self.frame_lock:
+                        if self.current_frame:
+                            # 构建包含用户信息的帧数据
+                            frame_data = {
+                                "frame": self.current_frame,
+                                "username": self.username,
+                                "client_ip": self.client_ip,
+                                "stream_type": stream_type,
+                            }
+                            yield f"data: {json.dumps(frame_data)}\n\n"
+                    time.sleep(1 / 30)
+
+            return Response(generate(), mimetype="text/event-stream")
+
+        @self.app.route("/api/toggle_video", methods=["POST"])
+        def toggle_video():
+            """切换视频流的开启/关闭状态"""
+            data = request.json
+            action = data.get("action")
+
+            if action == "start" and not self.is_streaming:
+                self.is_streaming = True
+                self.video_thread = threading.Thread(target=self.process_video)
+                self.video_thread.start()
+            elif action == "stop" and self.is_streaming:
+                self.is_streaming = False
+                if self.video_thread:
+                    self.video_thread.join()
+
+            return jsonify({"status": "success"})
+
     def start(self, remote=False):
         """
         execute functions based on the command line input
@@ -481,6 +534,31 @@ class ConferenceClient:
 
             if not recognized:
                 print(f"[Warn]: Unrecognized cmd_input {cmd_input}")
+
+    def process_video(self):
+        """处理视频流并保持当前帧的更新"""
+        self.video_capture = cv2.VideoCapture(self.video_path)
+        while self.is_streaming and self.on_meeting:
+            ret, frame = self.video_capture.read()
+            if not ret:
+                # 视频结束时重新开始
+                self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+
+            # 调整帧大小
+            frame = cv2.resize(frame, (640, 480))
+
+            # 将帧转换为base64格式
+            _, buffer = cv2.imencode(".jpg", frame)
+            frame_base64 = base64.b64encode(buffer).decode("utf-8")
+
+            with self.frame_lock:
+                self.current_frame = frame_base64
+
+            time.sleep(1 / 30)  # 控制帧率
+
+        if self.video_capture:
+            self.video_capture.release()
 
 
 if __name__ == "__main__":

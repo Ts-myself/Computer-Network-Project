@@ -271,29 +271,27 @@
                 const videoContainer = document.createElement('div');
                 videoContainer.className = 'video-container';
 
-                const screenVideo = document.createElement('video');
+                // 创建屏幕共享视频元素
+                const screenVideo = document.createElement('img'); // 使用img替代video
                 screenVideo.className = 'screen-display';
                 screenVideo.id = `screen${participant.id}`;
-                screenVideo.autoplay = true;
-                screenVideo.muted = true;
 
                 const cameraContainer = document.createElement('div');
                 cameraContainer.className = 'camera-container';
 
-                const cameraVideo = document.createElement('video');
+                // 创建摄像头视频元素
+                const cameraVideo = document.createElement('img'); // 使用img替代video
                 cameraVideo.className = 'user-camera';
                 cameraVideo.id = `camera${participant.id}`;
-                cameraVideo.autoplay = true;
-                cameraVideo.muted = true;
 
                 cameraContainer.appendChild(cameraVideo);
                 videoContainer.appendChild(screenVideo);
                 videoContainer.appendChild(cameraContainer);
                 videoGrid.appendChild(videoContainer);
 
-                // 为新创建的视频元素模拟视频流
-                simulateVideoStream(screenVideo, participant.id);
-                simulateVideoStream(cameraVideo, participant.id);
+                // 设置视频流
+                setupVideoStream(screenVideo, participant.id, 'screen');
+                setupVideoStream(cameraVideo, participant.id, 'camera');
             });
 
             // 更新分页按钮状态
@@ -358,32 +356,28 @@
             initUserInfo();
         });
 
-        // 模拟视频流函数
-        function simulateVideoStream(videoElement, userId) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 480;
-            const ctx = canvas.getContext('2d');
+        // 替换现有的simulateVideoStream函数
+        function setupVideoStream(videoElement, userId, streamType) {
+            const eventSource = new EventSource(`/api/video_feed/${streamType}`);
 
-            let hue = Math.random() * 360;
-            function drawRandomFrame() {
-                ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            eventSource.onmessage = function (event) {
+                const data = JSON.parse(event.data);
 
-                ctx.fillStyle = 'white';
-                ctx.font = '30px Arial';
-                ctx.fillText(`User ${userId}`, 20, 50);
+                // 检查这个视频流是否属于当前视频元素
+                const elementId = `${streamType}${userId}`;
+                if (videoElement.id === elementId) {
+                    // 更新视频帧
+                    videoElement.src = `data:image/jpeg;base64,${data.frame}`;
+                }
+            };
 
-                hue = (hue + 10) % 360;
-            }
+            eventSource.onerror = function (error) {
+                console.error('Video stream error:', error);
+                eventSource.close();
+            };
 
-            setInterval(() => {
-                drawRandomFrame();
-                videoElement.srcObject = canvas.captureStream(5);
-            }, 1000);
+            return eventSource;
         }
-
-
 
         // 控制按钮事件监听
         document.getElementById('toggleCamera').addEventListener('click', function () {
