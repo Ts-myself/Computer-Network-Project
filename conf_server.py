@@ -18,14 +18,14 @@ class ConferenceServer:
         self.server_ip = server_ip
         self.conference_id = conference_id
         self.conf_serve_ports = data_ports
-        self.data_ports = data_ports # map data_type to port
+        self.data_ports = data_ports  # map data_type to port
         self.host_ip = host_ip
 
         self.clients_info = {}
-        
-        self.client_tcps = dict() # dict of client_addr: client_conn
+
+        self.client_tcps = dict()  # dict of client_addr: client_conn
         self.client_udps = set()  # set of client_addr
-        
+
         self.mode = "Client-Server"  # Default mode
         self.running = True
 
@@ -42,8 +42,9 @@ class ConferenceServer:
                     data = reader.recv(BUFFER_SIZE)
                     if not data:
                         break
+                    print(f"Received message: {data.decode()}")
                     # Forward the message to all other clients
-                    for client_conn in self.client_conns.values():
+                    for client_conn in self.client_tcps.values():
                         # if client_conn != reader:
                         client_conn.send(data)
             except Exception as e:
@@ -53,16 +54,16 @@ class ConferenceServer:
                 while self.running:
                     # Receive audio data via UDP
                     data, addr = reader.recvfrom(65535)
-                    
+
                     if addr not in self.client_udps:
                         self.client_udps.add(addr)
                         print(f"Added {addr} to client_udps")
-                    
+
                     # Forward the audio data to all other clients
                     for client_addr in self.client_udps:
                         if client_addr != addr:  # Don't send back to the sender
                             writer.sendto(data, client_addr)
-                            
+
             except Exception as e:
                 print(f"[Error] Audio handling error: {str(e)}")
         elif data_type == "screen":
@@ -128,9 +129,7 @@ class ConferenceServer:
             # Accept new TCP client for message handling
             client_conn, client_addr = self.sock_msg.accept()
             self.client_tcps[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data, args=(client_conn, self.client_tcps, "msg")
-            ).start()
+            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps, "msg")).start()
 
 
 class MainServer:
@@ -164,9 +163,7 @@ class MainServer:
             """
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
-            self.conference_servers[conf_id] = ConferenceServer(
-                conf_id, self.conf_ports, client_ip, self.server_ip
-            )
+            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip)
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
             return jsonify(
@@ -258,5 +255,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()

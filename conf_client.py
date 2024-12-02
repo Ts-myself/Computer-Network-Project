@@ -11,7 +11,7 @@ import cv2
 import base64
 from threading import Lock
 
-SERVER_IP = "127.0.0.1"
+SERVER_IP = SERVER_IP_PUBLIC_TJL
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
@@ -32,17 +32,13 @@ class ConferenceClient:
         self.client_ip = socket.gethostbyname(socket.gethostname())
         self.username = "User"
         self.on_meeting = False  # status
-        self.conns = (
-            None  # you may need to maintain multiple conns for a single conference
-        )
+        self.conns = None  # you may need to maintain multiple conns for a single conference
         self.support_data_types = []  # for some types of data
         self.share_data = {}
         self.conference_id = None
         self.participant_num = 1
 
-        self.conference_info = (
-            None  # you may need to save and update some conference_info regularly
-        )
+        self.conference_info = None  # you may need to save and update some conference_info regularly
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
 
@@ -90,9 +86,7 @@ class ConferenceClient:
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
         try:
-            response = requests.post(
-                f"{self.server_addr}/join_conference/{conference_id}"
-            )
+            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
@@ -112,9 +106,7 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(
-                f"{self.server_addr}/quit_conference/{self.conference_id}"
-            )
+            response = requests.post(f"{self.server_addr}/quit_conference/{self.conference_id}")
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Quit conference")
@@ -132,9 +124,7 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(
-                f"{self.server_addr}/cancel_conference/{self.conference_id}"
-            )
+            response = requests.post(f"{self.server_addr}/cancel_conference/{self.conference_id}")
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Cancelled conference")
@@ -143,71 +133,22 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] {str(e)}")
 
-    def send_msg(self):
-        """
-        Send messages in a conference using TCP socket connection
-        """
-        if not self.on_meeting:
-            print("[Warn] Not in a conference")
-            return
-
-        max_retries = 3
-        retry_delay = 1  # seconds
-
-        for attempt in range(max_retries):
-            try:
-                print(f"[INFO] Connecting to message server (attempt {attempt + 1}/{max_retries})...")
-                # Create TCP socket for messaging
-                msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                msg_socket.connect((SERVER_IP, SERVER_MSG_PORT))
-                print("[Success] Connected to message server")
-
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    print(f"[Warn] Connection attempt failed: {str(e)}")
-                    print(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                else:
-                    print(
-                        f"[Error] Messaging error after {max_retries} attempts: {str(e)}"
-                    )
-                return
-
-    # Start receive thread
-    def receive_messages():
-        while self.on_meeting:
-            try:
-                data = msg_socket.recv(BUFFER_SIZE).decode()
+    def recv_msg(self):
+        try:
+            while self.on_meeting:
+                data = self.sock_msg.recv(1024)
                 if data:
-                    msg_data = json.loads(data)
-                    print(
-                        f"[{msg_data['timestamp']}] {msg_data['ip']}: {msg_data['msg']}"
-                    )
-            except:
-                break
-        msg_socket.close()
+                    # Parse the received JSON message
+                    msg_data = json.loads(data.decode())
+                    print(f"[INFO] Received message: {msg_data}")
+                    self.new_msgs.append(msg_data)  # Store the parsed JSON object
+        except Exception as e:
+            print(f"[Error] Failed to receive message: {str(e)}")
 
-        threading.Thread(target=receive_messages).start()
-
-        # Send messages until conference ends
-        print("Start messaging (type 'quit_msg' to stop):")
-        while self.on_meeting:
-            message = input()
-            if message.lower() == "quit_msg":  # TODO: use botton to quit
-                break
-            msg_json = {
-                "msg": message,
-                "ip": self.client_ip,
-                "timestamp": getCurrentTime(),
-            }
-            msg_socket.send(json.dumps(msg_json).encode())
-
-            break  # 如果成功连接，跳出重试循环
-            
     def start_audio(self):
         try:
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind((self.client_ip, self.client_audio_port)) 
+            udp_socket.bind((self.client_ip, self.client_audio_port))
             udp_socket.setblocking(False)  # 设置非阻塞模式
 
             input_stream = self.audio.open(
@@ -233,7 +174,7 @@ class ConferenceClient:
                 try:
                     recv_audio, _ = udp_socket.recvfrom(65535)
                     # output_stream.write(recv_audio)
-                    print(recv_audio) # test
+                    print(recv_audio)  # test
                 except BlockingIOError:
                     pass
 
@@ -283,9 +224,7 @@ class ConferenceClient:
             udp_socket.close()
             print("[Audio] Stopped audio reception and playback.")
 
-    def keep_share(
-        self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
-    ):
+    def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
         """
         running task: keep sharing (capture and send) certain type of data from server or clients (P2P)
         you can create different functions for sharing various kinds of data
@@ -316,9 +255,10 @@ class ConferenceClient:
         start necessary running task for conference
         """
         try:
-            # Start message thread
-            threading.Thread(target=self.send_msg).start()
-            
+            self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
+
+            # Start message receiving thread
+            threading.Thread(target=self.recv_msg).start()
             # Start audio thread
             threading.Thread(target=self.start_audio).start()
 
@@ -488,11 +428,7 @@ class ConferenceClient:
                 status = f"OnMeeting-{self.conference_id}"
 
             recognized = True
-            cmd_input = (
-                input(f'({status}) Please enter a operation (enter "?" to help): ')
-                .strip()
-                .lower()
-            )
+            cmd_input = input(f'({status}) Please enter a operation (enter "?" to help): ').strip().lower()
             fields = cmd_input.split(maxsplit=1)
             if len(fields) == 1:
                 if cmd_input in ("?", "？"):
@@ -549,6 +485,7 @@ class ConferenceClient:
         if self.video_capture:
             self.video_capture.release()
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Conference Client")
     parser.add_argument(
@@ -558,9 +495,7 @@ if __name__ == "__main__":
         default=9000,
         help="Port to run the frontend on (default: 9000)",
     )
-    parser.add_argument(
-        "-r", "--remote", type=bool, default=False, help="It's remote client"
-    )
+    parser.add_argument("-r", "--remote", type=bool, default=False, help="It's remote client")
     args = parser.parse_args()
 
     FRONT_PORT = args.port
