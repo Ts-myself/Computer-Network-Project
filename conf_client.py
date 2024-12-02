@@ -11,7 +11,13 @@ import cv2
 import base64
 from threading import Lock
 
+<<<<<<< HEAD
 SERVER_IP = SERVER_IP_PUBLIC_TJL
+=======
+# SERVER_IP = "127.0.0.1"
+# SERVER_IP = '10.13.179.129'
+SERVER_IP = SERVER_IP_LOCAL
+>>>>>>> d38cd39516f518dffd5232bceed9f8c4a429186d
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
