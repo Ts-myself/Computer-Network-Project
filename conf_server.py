@@ -23,7 +23,9 @@ class ConferenceServer:
 
         self.clients_info = {}
 
-        self.client_tcps = dict()  # dict of client_addr: client_conn
+        self.client_tcps_msg = dict()  
+        self.client_tcps_camera = dict()
+        self.client_tcps_screen = dict()
         self.client_udps = set()  # set of client_addr
 
         self.mode = "Client-Server"  # Default mode
@@ -44,16 +46,18 @@ class ConferenceServer:
                         break
                     print(f"Received message: {data.decode()}")
                     # Forward the message to all other clients
-                    for client_conn in self.client_tcps.values():
+                    for client_conn in self.client_tcps_msg.values():
                         # if client_conn != reader:
+                        # print(f"Forwarding message to {client_conn.getpeername()}")
                         client_conn.send(data)
+                        # print(f"Successfully forwarded message to {client_conn.getpeername()}")
             except Exception as e:
                 print(f"[Error] Message handling error: {str(e)}")
         elif data_type == "audio":
             try:
                 while self.running:
                     # Receive audio data via UDP
-                    data, addr = reader.recvfrom(65535)
+                    data, addr = reader.recvfrom(BIG_BUFFER_SIZE)
 
                     if addr not in self.client_udps:
                         self.client_udps.add(addr)
@@ -67,9 +71,51 @@ class ConferenceServer:
             except Exception as e:
                 print(f"[Error] Audio handling error: {str(e)}")
         elif data_type == "screen":
-            pass
+            try:
+                while self.running:
+                    # Receive camera data via TCP
+                    # data = reader.recv(BIG_BUFFER_SIZE)
+                    print(reader.getpeername())
+                    header = reader.recv(4)
+                    if not header:
+                        break
+                    import struct
+                    frame_length = struct.unpack(">I", header)[0]
+                    print(f"Received screen header: {frame_length} bytes")
+                    data = reader.recv(frame_length)
+                    print(f"Received screen data: {len(data)} bytes")
+                    # Forward the camera data to all other clients
+                    for client_conn in self.client_tcps_screen.values():
+                        # if client_conn != reader:
+                        client_conn.send(header)
+                        client_conn.send(data)
+                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+            except Exception as e:
+                print(f"[Error] Camera handling error: {str(e)}") 
         elif data_type == "camera":
-            pass
+            try:
+                while self.running:
+                    # Receive camera data via TCP
+                    # data = reader.recv(BIG_BUFFER_SIZE)
+                    print(reader.getpeername())
+                    header = reader.recv(4)
+                    if not header:
+                        break
+                    import struct
+                    frame_length = struct.unpack(">I", header)[0]
+                    print(f"Received camera header: {frame_length} bytes")
+                    data = reader.recv(frame_length)
+                    print(f"Received camera data: {len(data)} bytes")
+                    # Forward the camera data to all other clients
+                    for client_conn in self.client_tcps_camera.values():
+                        # if client_conn != reader:
+                        client_conn.send(header)
+                        client_conn.send(data)
+                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+            except Exception as e:
+                print(f"[Error] Camera handling error: {str(e)}")
+        else:
+            print(f"[Error] Invalid data type: {data_type}")
 
     def log(self):
         """
@@ -110,26 +156,52 @@ class ConferenceServer:
         """
         # message
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print(f"Message server started at {self.server_ip}:{self.data_ports['msg']}")
         self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
         self.sock_msg.listen(5)
 
-        # audio
-        print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
-        self.sock_aud = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock_aud.bind((self.server_ip, self.data_ports["audio"]))
+        # camera
+        self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
+        self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
+        self.sock_camera.listen(5)
+        
+        # screen
+        self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print(f"Camera server started at {self.server_ip}:{self.data_ports['screen']}")
+        self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
+        self.sock_screen.listen(5) 
 
-        # Start audio handler thread
-        threading.Thread(
-            target=self.handle_data,
-            args=(self.sock_aud, self.sock_aud, "audio"),
-            daemon=True,
-        ).start()
+        # # audio
+        # print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
+        # self.sock_aud = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # self.sock_aud.bind((self.server_ip, self.data_ports["audio"]))
+
+        # # Start audio handler thread
+        # threading.Thread(
+        #     target=self.handle_data,
+        #     args=(self.sock_aud, self.sock_aud, "audio"),
+        #     daemon=True,
+        # ).start()
 
         while self.running:
             # Accept new TCP client for message handling
             client_conn, client_addr = self.sock_msg.accept()
-            self.client_tcps[client_addr] = client_conn
-            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps, "msg")).start()
+            # self.client_tcps[client_addr] = client_conn
+            self.client_tcps_msg[client_addr] = client_conn
+            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps_msg, "msg")).start()
+
+            # Accept new TCP client for camera handling
+            client_conn, client_addr = self.sock_camera.accept()
+            # self.client_tcps[client_addr] = client_conn
+            self.client_tcps_camera[client_addr] = client_conn
+            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps_camera, "camera")).start()
+            
+            # Accept new TCP client for screen handling
+            client_conn, client_addr = self.sock_screen.accept()
+            # self.client_tcps[client_addr] = client_conn
+            self.client_tcps_screen[client_addr] = client_conn
+            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps_screen, "screen")).start()
 
 
 class MainServer:
@@ -255,5 +327,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
