@@ -23,7 +23,7 @@ class ConferenceServer:
 
         self.clients_info = {}
 
-        self.client_tcps_msg = dict()  
+        self.client_tcps_msg = dict()
         self.client_tcps_camera = dict()
         self.client_tcps_screen = dict()
         self.client_udps = set()  # set of client_addr
@@ -80,6 +80,7 @@ class ConferenceServer:
                     if not header:
                         break
                     import struct
+
                     frame_length = struct.unpack(">I", header)[0]
                     print(f"Received screen header: {frame_length} bytes")
                     data = reader.recv(frame_length)
@@ -89,9 +90,11 @@ class ConferenceServer:
                         # if client_conn != reader:
                         client_conn.send(header)
                         client_conn.send(data)
-                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        print(
+                            f"Successfully forwarded camera data to {client_conn.getpeername()}"
+                        )
             except Exception as e:
-                print(f"[Error] Camera handling error: {str(e)}") 
+                print(f"[Error] Camera handling error: {str(e)}")
         elif data_type == "camera":
             try:
                 while self.running:
@@ -102,6 +105,7 @@ class ConferenceServer:
                     if not header:
                         break
                     import struct
+
                     frame_length = struct.unpack(">I", header)[0]
                     print(f"Received camera header: {frame_length} bytes")
                     data = reader.recv(frame_length)
@@ -111,7 +115,9 @@ class ConferenceServer:
                         # if client_conn != reader:
                         client_conn.send(header)
                         client_conn.send(data)
-                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        print(
+                            f"Successfully forwarded camera data to {client_conn.getpeername()}"
+                        )
             except Exception as e:
                 print(f"[Error] Camera handling error: {str(e)}")
         else:
@@ -165,12 +171,12 @@ class ConferenceServer:
         print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
         self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
         self.sock_camera.listen(5)
-        
+
         # screen
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Camera server started at {self.server_ip}:{self.data_ports['screen']}")
         self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
-        self.sock_screen.listen(5) 
+        self.sock_screen.listen(5)
 
         # # audio
         # print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
@@ -189,19 +195,27 @@ class ConferenceServer:
             client_conn, client_addr = self.sock_msg.accept()
             # self.client_tcps[client_addr] = client_conn
             self.client_tcps_msg[client_addr] = client_conn
-            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps_msg, "msg")).start()
+            threading.Thread(
+                target=self.handle_data, args=(client_conn, self.client_tcps_msg, "msg")
+            ).start()
 
             # Accept new TCP client for camera handling
             client_conn, client_addr = self.sock_camera.accept()
             # self.client_tcps[client_addr] = client_conn
             self.client_tcps_camera[client_addr] = client_conn
-            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps_camera, "camera")).start()
-            
+            threading.Thread(
+                target=self.handle_data,
+                args=(client_conn, self.client_tcps_camera, "camera"),
+            ).start()
+
             # Accept new TCP client for screen handling
             client_conn, client_addr = self.sock_screen.accept()
             # self.client_tcps[client_addr] = client_conn
             self.client_tcps_screen[client_addr] = client_conn
-            threading.Thread(target=self.handle_data, args=(client_conn, self.client_tcps_screen, "screen")).start()
+            threading.Thread(
+                target=self.handle_data,
+                args=(client_conn, self.client_tcps_screen, "screen"),
+            ).start()
 
 
 class MainServer:
@@ -235,7 +249,9 @@ class MainServer:
             """
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
-            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip)
+            self.conference_servers[conf_id] = ConferenceServer(
+                conf_id, self.conf_ports, client_ip, self.server_ip
+            )
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
             return jsonify(
@@ -327,5 +343,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()

@@ -13,7 +13,7 @@ import struct
 from threading import Lock
 
 
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_TJL
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
@@ -34,13 +34,17 @@ class ConferenceClient:
         self.client_ip = socket.gethostbyname(socket.gethostname())
         self.username = "User"
         self.on_meeting = False  # status
-        self.conns = None  # you may need to maintain multiple conns for a single conference
+        self.conns = (
+            None  # you may need to maintain multiple conns for a single conference
+        )
         self.support_data_types = []  # for some types of data
         self.share_data = {}
         self.conference_id = None
         self.participant_num = 1
 
-        self.conference_info = None  # you may need to save and update some conference_info regularly
+        self.conference_info = (
+            None  # you may need to save and update some conference_info regularly
+        )
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
 
@@ -58,10 +62,12 @@ class ConferenceClient:
         # 添加视频相关的属性
         self.video_path = "test_video.mp4"
         self.video_capture = None
-        self.frame_lock = Lock()
-        self.current_frame = None
-        self.video_thread = None
-        self.is_streaming = False
+        self.camera_frame_lock = Lock()
+        self.screen_frame_lock = Lock()
+        self.current_camera_frame = None
+        self.current_screen_frame = None
+        self.is_camera_streaming = False
+        self.is_screen_streaming = False
 
         # camera and screen
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -92,7 +98,9 @@ class ConferenceClient:
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
         try:
-            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/join_conference/{conference_id}"
+            )
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
@@ -112,7 +120,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/quit_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/quit_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Quit conference")
@@ -130,7 +140,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/cancel_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/cancel_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Cancelled conference")
@@ -162,20 +174,23 @@ class ConferenceClient:
                 print("[Warn] Not in a conference")
                 return
             while self.on_meeting:
-                with mss.mss() as sct:
-                    monitor = sct.monitors[1]
-                    img = sct.grab(monitor)
-                    img_np = np.array(img)
-                    img_np = cv2.resize(img_np, (640, 480))
-                    _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
-                    img_bytes = img_encode.tobytes()
-                    img_length = len(img_bytes)
-                    header = struct.pack(">I", img_length)
-                    self.sock_screen.send(header)
-                    self.sock_screen.send(img_bytes)
+                if self.is_screen_streaming:
+                    with mss.mss() as sct:
+                        monitor = sct.monitors[1]
+                        img = sct.grab(monitor)
+                        img_np = np.array(img)
+                        img_np = cv2.resize(img_np, (1280, 720))
+                        _, img_encode = cv2.imencode(
+                            ".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
+                        )
+                        img_bytes = img_encode.tobytes()
+                        img_length = len(img_bytes)
+                        header = struct.pack(">I", img_length)
+                        self.sock_screen.send(header)
+                        self.sock_screen.send(img_bytes)
         except Exception as e:
             print(f"[Error] Failed to send screen data: {str(e)}")
-    
+
     def recv_screen(self):
         print("[INFO] Starting screen receiving...")
         try:
@@ -189,23 +204,23 @@ class ConferenceClient:
                 if not header:
                     break
                 import struct
+
                 frame_length = struct.unpack(">I", header)[0]
-                print('Successfully receive header')
+                print("Successfully receive header")
                 print(f"frame length: {frame_length}")
                 data = self.sock_screen.recv(frame_length)
-                print('Successfully receive camera data')
+                print("Successfully receive camera data")
                 frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
                 # frame = cv2.resize(frame, (640, 480))
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 # with self.frame_lock:
-                self.current_frame = frame_base64
+                self.current_screen_frame = frame_base64
                 # time.sleep(1 / 30)  # 控制帧率
-                
 
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
-    
+
     def send_camera(self):
         print("[INFO] Starting camera streaming...")
         try:
@@ -214,15 +229,18 @@ class ConferenceClient:
                 return
             cap = initialize_camera()
             while self.on_meeting:
-                ret, frame = cap.read()
-                if not ret:
-                    print(f"帧捕获失败。")
-                    break
-                _, frame_encode = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
-                frame_length = len(frame_encode)
-                header = struct.pack(">I", frame_length)
-                self.sock_camera.send(header)
-                self.sock_camera.send(frame_encode)
+                if self.is_camera_streaming:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print(f"帧捕获失败。")
+                        break
+                    _, frame_encode = cv2.imencode(
+                        ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
+                    )
+                    frame_length = len(frame_encode)
+                    header = struct.pack(">I", frame_length)
+                    self.sock_camera.send(header)
+                    self.sock_camera.send(frame_encode)
             # counter = 0
             # while self.on_meeting:
             #     frames, tot, st, en = capture_camera()
@@ -241,7 +259,6 @@ class ConferenceClient:
             #     time.sleep(100000000)
         except Exception as e:
             print(f"[Error] Failed to send camera data: {str(e)}")
-            
 
     def recv_camera(self):
         print("[INFO] Starting camera receiving...")
@@ -256,23 +273,22 @@ class ConferenceClient:
                 if not header:
                     break
                 import struct
+
                 frame_length = struct.unpack(">I", header)[0]
-                print('Successfully receive header')
+                print("Successfully receive header")
                 print(f"frame length: {frame_length}")
                 data = self.sock_camera.recv(frame_length)
-                print('Successfully receive camera data')
+                print("Successfully receive camera data")
                 frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
                 # frame = cv2.resize(frame, (640, 480))
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 # with self.frame_lock:
-                self.current_frame = frame_base64
+                self.current_camera_frame = frame_base64
                 # time.sleep(1 / 30)  # 控制帧率
-                
 
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
-
 
     def start_audio(self):
         try:
@@ -298,7 +314,9 @@ class ConferenceClient:
             while self.on_meeting:
                 if self.microphone_on:
                     sent_audio = input_stream.read(CHUNK)
-                    udp_socket.sendto(sent_audio, (self.server_ip, self.server_audio_port))
+                    udp_socket.sendto(
+                        sent_audio, (self.server_ip, self.server_audio_port)
+                    )
 
                 try:
                     recv_audio, _ = udp_socket.recvfrom(65535)
@@ -353,7 +371,9 @@ class ConferenceClient:
             udp_socket.close()
             print("[Audio] Stopped audio reception and playback.")
 
-    def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
+    def keep_share(
+        self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30
+    ):
         """
         running task: keep sharing (capture and send) certain type of data from server or clients (P2P)
         you can create different functions for sharing various kinds of data
@@ -393,8 +413,8 @@ class ConferenceClient:
             # Start audio thread
             # threading.Thread(target=self.start_audio).start()
             # Strat camera thread
-            # threading.Thread(target=self.send_camera).start()
-            # threading.Thread(target=self.recv_camera).start()
+            threading.Thread(target=self.send_camera).start()
+            threading.Thread(target=self.recv_camera).start()
             # Start screen thread
             threading.Thread(target=self.send_screen).start()
             threading.Thread(target=self.recv_screen).start()
@@ -464,11 +484,11 @@ class ConferenceClient:
                 self.conference_id = data["conference_id"]
                 self.join_conference(self.conference_id)
             elif action == "toggle_camera":
-                pass
+                self.is_camera_streaming = not self.is_camera_streaming
             elif action == "toggle_screen":
-                pass
+                self.is_screen_streaming = not self.is_screen_streaming
             elif action == "toggle_mic":
-                pass
+                self.microphone_on = not self.microphone_on
             elif action == "switch_meeting":
                 data = request.json
                 self.conference_id = data["conference_id"]
@@ -516,16 +536,20 @@ class ConferenceClient:
 
             def generate():
                 while self.is_streaming and self.on_meeting:
-                    with self.frame_lock:
-                        if self.current_frame:
-                            # 构建包含用户信息的帧数据
-                            frame_data = {
-                                "frame": self.current_frame,
-                                "username": self.username,
-                                "client_ip": self.client_ip,
-                                "stream_type": stream_type,
-                            }
-                            yield f"data: {json.dumps(frame_data)}\n\n"
+                    current_frame = (
+                        self.current_camera_frame
+                        if stream_type == "camera"
+                        else self.current_screen_frame
+                    )
+                    if current_frame:
+                        # 构建包含用户信息的帧数据
+                        frame_data = {
+                            "frame": current_frame,
+                            "username": self.username,
+                            "client_ip": self.client_ip,
+                            "stream_type": stream_type,
+                        }
+                        yield f"data: {json.dumps(frame_data)}\n\n"
                     time.sleep(1 / 30)
 
             return Response(generate(), mimetype="text/event-stream")
@@ -564,7 +588,11 @@ class ConferenceClient:
                 status = f"OnMeeting-{self.conference_id}"
 
             recognized = True
-            cmd_input = input(f'({status}) Please enter a operation (enter "?" to help): ').strip().lower()
+            cmd_input = (
+                input(f'({status}) Please enter a operation (enter "?" to help): ')
+                .strip()
+                .lower()
+            )
             fields = cmd_input.split(maxsplit=1)
             if len(fields) == 1:
                 if cmd_input in ("?", "？"):
@@ -596,30 +624,30 @@ class ConferenceClient:
             if not recognized:
                 print(f"[Warn]: Unrecognized cmd_input {cmd_input}")
 
-    def process_video(self):
-        """处理视频流并保持当前帧的更新"""
-        self.video_capture = cv2.VideoCapture(self.video_path)
-        while self.is_streaming and self.on_meeting:
-            ret, frame = self.video_capture.read()
-            if not ret:
-                # 视频结束时重新开始
-                self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                continue
+    # def process_video(self):
+    #     """处理视频流并保持当前帧的更新"""
+    #     self.video_capture = cv2.VideoCapture(self.video_path)
+    #     while self.is_streaming and self.on_meeting:
+    #         ret, frame = self.video_capture.read()
+    #         if not ret:
+    #             # 视频结束时重新开始
+    #             self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    #             continue
 
-            # 调整帧大小
-            frame = cv2.resize(frame, (640, 480))
+    #         # 调整帧大小
+    #         frame = cv2.resize(frame, (640, 480))
 
-            # 将帧转换为base64格式
-            _, buffer = cv2.imencode(".jpg", frame)
-            frame_base64 = base64.b64encode(buffer).decode("utf-8")
+    #         # 将帧转换为base64格式
+    #         _, buffer = cv2.imencode(".jpg", frame)
+    #         frame_base64 = base64.b64encode(buffer).decode("utf-8")
 
-            with self.frame_lock:
-                self.current_frame = frame_base64
+    #         with self.frame_lock:
+    #             self.current_frame = frame_base64
 
-            time.sleep(1 / 30)  # 控制帧率
+    #         time.sleep(1 / 30)  # 控制帧率
 
-        if self.video_capture:
-            self.video_capture.release()
+    #     if self.video_capture:
+    #         self.video_capture.release()
 
 
 if __name__ == "__main__":
@@ -631,7 +659,9 @@ if __name__ == "__main__":
         default=9000,
         help="Port to run the frontend on (default: 9000)",
     )
-    parser.add_argument("-r", "--remote", type=bool, default=False, help="It's remote client")
+    parser.add_argument(
+        "-r", "--remote", type=bool, default=False, help="It's remote client"
+    )
     args = parser.parse_args()
 
     FRONT_PORT = args.port
