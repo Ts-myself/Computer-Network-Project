@@ -1,9 +1,14 @@
-from util import *
+import struct
+import time
 
-frame, tot, ack = capture_camera()
+time_stamp = time.time()
 
-img = frame[0]
-# frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-img = cv2.imdecode(np.frombuffer(frame[0], np.uint8), cv2.IMREAD_COLOR)
-cv2.imshow("frame", img)
-cv2.waitKey(0)
+print("time_stamp: ", time_stamp)
+
+header = struct.pack(">d", time_stamp)
+
+print("header: ", header)
+print("header length: ", len(header))
+decode_header = struct.unpack(">d", header)[0]
+
+print("decode_header: ", decode_header)

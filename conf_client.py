@@ -15,6 +15,7 @@ from threading import Lock
 
 SERVER_IP = SERVER_IP_LOCAL
 SERVER_PORT = 8888
+SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
 SERVER_SCREEN_PORT = 8892
@@ -62,6 +63,13 @@ class ConferenceClient:
         self.current_frame = None
         self.video_thread = None
         self.is_streaming = False
+        
+        # control
+        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.last_control_screen_time = time.time()
+        self.last_control_camera_time = time.time()
+        self.screen_sleep_time = 0
+        self.camera_sleep_time = 0
 
         # camera and screen
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -155,6 +163,29 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] Failed to receive message: {str(e)}")
 
+    def send_control(self, message, time_stamp):
+        self.last_control_screen_time = time_stamp
+        control_message = message
+        control_message = struct.pack(">I", control_message)
+        control_message += struct.pack(">d", time_stamp)
+        self.sock_control.send(control_message)
+                    
+    def recv_control(self):
+        print("[INFO] Starting control receiving...")
+        try:
+            while self.on_meeting:
+                control_message = self.sock_control.recv(12)
+                message = struct.unpack(">I", control_message[:4])[0]
+                time_stamp = struct.unpack(">d", control_message[4:])[0]
+                print(f"Received control message: {message}")
+                if message == 1:
+                    self.screen_sleep_time += SCREEN_SLEEP_INCREASE
+                    print(f"Screen sleep time: {self.screen_sleep_time}")
+                else:
+                    pass
+        except Exception as e:
+            print(f"[Error] Failed to receive control message: {str(e)}")    
+
     def send_screen(self):
         print("[INFO] Starting screen streaming...")
         try:
@@ -171,36 +202,40 @@ class ConferenceClient:
                     img_bytes = img_encode.tobytes()
                     img_length = len(img_bytes)
                     header = struct.pack(">I", img_length)
+                    time_stamp = time.time()
+                    header += struct.pack(">d", time_stamp)
                     self.sock_screen.send(header)
                     self.sock_screen.send(img_bytes)
+                    time.sleep(self.screen_sleep_time)
+                    self.screen_sleep_time -= SCREEN_SLEEP_DECREASE
+                    if self.screen_sleep_time < 0:
+                        self.screen_sleep_time = 0
         except Exception as e:
             print(f"[Error] Failed to send screen data: {str(e)}")
     
     def recv_screen(self):
         print("[INFO] Starting screen receiving...")
         try:
-            counter = 0
             while self.on_meeting:
-                header = self.sock_screen.recv(4)
-                st = time.time()
-                print(f"camera start recv time: {st}")
-                counter += 1
-                print(f"camera count: {counter}")
+                header = self.sock_screen.recv(12)
                 if not header:
                     break
-                import struct
-                frame_length = struct.unpack(">I", header)[0]
+                frame_length = struct.unpack(">I", header[:4])[0]
+                frame_time = struct.unpack(">d", header[4:])[0]
                 print('Successfully receive header')
                 print(f"frame length: {frame_length}")
+                now_time = time.time()
+                time_gap = now_time - frame_time
+                print(f"frame time gap: {time_gap}")
+                if time_gap > SCREEN_TIME_MAX_GAP and now_time - self.last_control_screen_time > 1:
+                    # 1 slow screen send
+                    self.send_control(1, now_time)
                 data = self.sock_screen.recv(frame_length)
                 print('Successfully receive camera data')
                 frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-                # frame = cv2.resize(frame, (640, 480))
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                # with self.frame_lock:
                 self.current_frame = frame_base64
-                # time.sleep(1 / 30)  # 控制帧率
                 
 
         except Exception as e:
@@ -223,22 +258,6 @@ class ConferenceClient:
                 header = struct.pack(">I", frame_length)
                 self.sock_camera.send(header)
                 self.sock_camera.send(frame_encode)
-            # counter = 0
-            # while self.on_meeting:
-            #     frames, tot, st, en = capture_camera()
-            #     print(f"camera capture time: {st},{en}")
-            #     counter += 1
-            #     print(f"frame count: {counter}")
-            #     for frame in frames:
-            #         print(f"frame size: {len(frame)}")
-            #         frame_length = len(frame)
-            #         import struct
-            #         header = struct.pack(">I", frame_length)
-            #         self.sock_camera.send(header)
-            #         self.sock_camera.send(frame)
-            #     en = time.time()
-            #     print(f"camera send time: {en}")
-            #     time.sleep(100000000)
         except Exception as e:
             print(f"[Error] Failed to send camera data: {str(e)}")
             
@@ -384,9 +403,13 @@ class ConferenceClient:
         start necessary running task for conference
         """
         try:
+            self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
+            # Start control receiving thread
+            threading.Thread(target=self.recv_control).start()
+            
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
