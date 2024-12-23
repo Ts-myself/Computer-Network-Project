@@ -225,11 +225,28 @@
         </div>
     </div>
 
+    <audio id="audio" autoplay controls></audio>
+
+    <script>
+        const audioElement = document.getElementById('audio');
+
+        // 通过 JavaScript 尝试播放音频
+        audioElement.src = '/api/audio_feed';
+        audioElement.type = 'audio/wav';
+
+        audioElement.play().then(() => {
+            console.log("Audio started playing automatically.");
+        }).catch(error => {
+            console.error("Audio autoplay was prevented. User interaction required:", error);
+        });
+    </script>
+
     <div class="controls">
         <div class="control-group">
             <button id="toggleCamera" aria-label="打开或关闭摄像头">打开/关闭摄像头</button>
             <button id="toggleScreen" aria-label="打开或关闭屏幕共享">打开/关闭屏幕</button>
             <button id="toggleMic" aria-label="打开或关闭麦克风">打开/关闭麦克风</button>
+            <button id="toggleSpeaker" aria-label="打开或关闭扬声器">打开/关闭扬声器</button>
         </div>
         <div class="control-group">
             <button id="switchMeeting" aria-label="切换到其他会议">切换会议</button>
@@ -403,6 +420,16 @@
         document.getElementById('toggleMic').addEventListener('click', function () {
             // 向Flask后端发送切换麦克风状态的请求
             fetch('/api/button/toggle_mic', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        });
+
+        document.getElementById('toggleSpeaker').addEventListener('click', function () {
+            // 向Flask后端发送切换扬声器状态的请求
+            fetch('/api/button/toggle_speaker', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

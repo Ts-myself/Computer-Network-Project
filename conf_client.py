@@ -3,21 +3,21 @@ import json
 import socket
 import requests
 import threading
-from flask import Flask, request, jsonify, render_template, redirect, Response
+from flask import Flask, request, jsonify, render_template, redirect, Response, stream_with_context
 import time
 import sys
 import argparse
 import cv2
 import base64
 from threading import Lock
+import numpy as np
+from pydub import AudioSegment
+import io
+import queue
+import struct
+import av
 
-<<<<<<< HEAD
-SERVER_IP = SERVER_IP_PUBLIC_TJL
-=======
-# SERVER_IP = "127.0.0.1"
-# SERVER_IP = '10.13.179.129'
 SERVER_IP = SERVER_IP_LOCAL
->>>>>>> d38cd39516f518dffd5232bceed9f8c4a429186d
 SERVER_PORT = 8888
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
@@ -25,6 +25,8 @@ SERVER_SCREEN_PORT = 8892
 SERVER_CAMERA_PORT = 8893
 
 FRONT_PORT = 9000
+
+
 
 
 class ConferenceClient:
@@ -47,17 +49,33 @@ class ConferenceClient:
         self.conference_info = None  # you may need to save and update some conference_info regularly
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
-
-        ### Audio Streaming
-        self.audio = pyaudio.PyAudio()
-        self.server_audio_port = SERVER_AUDIO_PORT
-        self.client_audio_port = 8989
-        self.microphone_on = True
-
+        
         self.recv_msgs = []
         self.new_msgs = []
 
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        ### Audio Streaming ###
+        self.audio = pyaudio.PyAudio()
+        self.server_audio_port = SERVER_AUDIO_PORT
+        self.client_audio_port = 8989
+        self.microphone_on = True
+        self.speaker_on = True
+
+        self.audio_lock = Lock()
+        self.audio_buffers = {}
+        self.mixed_audio = queue.Queue(maxsize=100)
+        
+        self.audio_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.audio_udp_socket.bind((self.client_ip, self.client_audio_port))
+        # self.audio_udp_socket.setblocking(False)  # 设置非阻塞模式
+
+        self.output_stream = self.audio.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            output=True,
+        )
 
         # 添加视频相关的属性
         self.video_path = "test_video.mp4"
@@ -150,85 +168,107 @@ class ConferenceClient:
                     self.new_msgs.append(msg_data)  # Store the parsed JSON object
         except Exception as e:
             print(f"[Error] Failed to receive message: {str(e)}")
+    
+    def audio_sender(self):
+        input_stream = self.audio.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            frames_per_buffer=CHUNK,
+            input=True,
+        )
 
-    def start_audio(self):
-        try:
-            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind((self.client_ip, self.client_audio_port))
-            udp_socket.setblocking(False)  # 设置非阻塞模式
+        while self.on_meeting and self.microphone_on:
+            sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
+            timestamp = time.time()
+            packet = struct.pack("d", timestamp) + sent_audio
+            self.audio_udp_socket.sendto(packet, (self.server_ip, self.server_audio_port))
 
-            input_stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                input=True,
-            )
-            output_stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                output=True,
-            )
+    def audio_receiver(self):
 
-            while self.on_meeting:
-                if self.microphone_on:
-                    sent_audio = input_stream.read(CHUNK)
-                    udp_socket.sendto(sent_audio, (self.server_ip, self.server_audio_port))
+        while self.on_meeting:
+            recv_audio, addr = self.audio_udp_socket.recvfrom(65535)
+            timestamp = struct.unpack("d", recv_audio[:8])[0]
+            audio_data = recv_audio[8:]
 
+            current_time = time.time()
+            delay = current_time - timestamp
+            if delay > 0.5:  # 丢弃延迟超过 500ms 的音频
+                continue
+            
+            ip = addr[0]
+
+            # 将音频数据加入队列
+            if ip not in self.audio_buffers:
+                self.audio_buffers[ip] = queue.Queue(maxsize=10)
+
+            user_queue = self.audio_buffers[ip]
+            try:
+                user_queue.put(audio_data, block=False)
+            except queue.Full:
+                user_queue.get()
+                user_queue.put(audio_data)
+
+            except Exception as e:
+                print(f"Error receiving audio: {e}")
+            
+    def audio_mixer(self):
+        while self.on_meeting:
+            mixed_audio_array = None
+
+            # 遍历用户音频队列
+            for ip, user_queue in list(self.audio_buffers.items()):
                 try:
-                    recv_audio, _ = udp_socket.recvfrom(65535)
-                    # output_stream.write(recv_audio)
-                    print(recv_audio)  # test
-                except BlockingIOError:
-                    pass
+                    # 获取音频数据
+                    recv_audio = user_queue.get(block=False)
+                    user_audio_array = np.frombuffer(recv_audio, dtype=np.int16)
+                    # self.output_stream.write(user_audio_array.tobytes()) 
+                except queue.Empty:
+                    # 填充静音
+                    user_audio_array = np.zeros(CHUNK, dtype=np.int16)
 
-        except Exception as e:
-            print(f"[Error] Audio streaming failed: {str(e)}")
+                if mixed_audio_array is None:
+                    mixed_audio_array = np.zeros_like(user_audio_array, dtype=np.int32)
 
-        finally:
-            input_stream.stop_stream()
-            input_stream.close()
-            output_stream.stop_stream()
-            output_stream.close()
-            udp_socket.close()
-            print("[Audio] Stopped audio transmission and reception.")
+                # 混音叠加
+                mixed_audio_array += user_audio_array
 
-            print("[Audio] Stopped audio capture and transmission.")
-        pass
+            # 如果没有任何音频数据，填充静音
+            if mixed_audio_array is None:
+                mixed_audio_array = np.zeros(CHUNK, dtype=np.int16)
+            else:
+                # 剪裁混音数据
+                mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(np.int16)
 
-    def recv_aud(self):
-        """
-        Receive audio data
-        """
-        try:
-            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind((self.client_ip, self.audio_port))
+            # self.output_stream.write(mixed_audio_array.tobytes())
 
-            # Open audio output stream
-            stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                output=True,
-            )
+            
 
-            print("[Audio] Starting audio reception and playback...")
-            while self.on_meeting:
-                # Receive audio data from the server
-                audio_data, _ = udp_socket.recvfrom(CHUNK)
-                stream.write(audio_data)
+            try:
+                # print(self.mixed_audio.qsize())
+                self.mixed_audio.put_nowait(mixed_audio_array.tobytes())
 
-        except Exception as e:
-            print(f"[Error] Audio reception failed: {str(e)}")
+            except queue.Full:
+                print('shit')
+                self.mixed_audio.get()
+                self.mixed_audio.put(mixed_audio_array.tobytes())
 
-        finally:
-            stream.stop_stream()
-            stream.close()
-            udp_socket.close()
-            print("[Audio] Stopped audio reception and playback.")
+            finally:
+                time.sleep(CHUNK / RATE)
+                
+            # try:
+            #     current_time = time.time()
+            #     self.mixed_audio.put_nowait((current_time, mixed_audio_array.tobytes()))
+            # except queue.Full:
+            #     print('Queue is full, dropping the oldest packet.')
+            #     self.mixed_audio.get()
+            #     self.mixed_audio.put((current_time, mixed_audio_array.tobytes()))
+            # finally:
+            #     time.sleep(CHUNK / RATE)
+
+
+                
+
 
     def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
         """
@@ -265,8 +305,15 @@ class ConferenceClient:
 
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
+
             # Start audio thread
-            threading.Thread(target=self.start_audio).start()
+            # threading.Thread(target=self.start_audio).start()
+            sender_thread = threading.Thread(target=self.audio_sender)
+            sender_thread.start()
+            receiver_thread = threading.Thread(target=self.audio_receiver)
+            receiver_thread.start()
+            mixer_thread = threading.Thread(target=self.audio_mixer)
+            mixer_thread.start()
 
             # 自动开启视频流
             self.is_streaming = True
@@ -338,7 +385,9 @@ class ConferenceClient:
             elif action == "toggle_screen":
                 pass
             elif action == "toggle_mic":
-                pass
+                self.microphone_on = not self.microphone_on
+            elif action == "toggle_speaker":
+                self.speaker_on = not self.speaker_on
             elif action == "switch_meeting":
                 data = request.json
                 self.conference_id = data["conference_id"]
@@ -380,6 +429,28 @@ class ConferenceClient:
                 print(f"[Error] Failed to send message: {str(e)}")
                 return jsonify({"status": "error", "message": str(e)}), 500
 
+        @self.app.route("/api/audio_feed")
+        def audio_feed():
+            def generate_audio():
+                
+                # send wav header
+                yield generate_wav_header(
+                    sample_rate=RATE,
+                    bits_per_sample=BYTES_PER_SAMPLE * 8,
+                    channels=CHANNELS
+                )
+                
+                while self.on_meeting and self.speaker_on:
+                    try:
+                        mixed_audio = self.mixed_audio.get(block=True, timeout=0.1)
+                    except queue.Empty:
+                        mixed_audio = b'\x00' * CHUNK
+
+                    # self.output_stream.write(mixed_audio)
+                    yield mixed_audio
+
+            return Response(generate_audio(), mimetype="audio/wav")
+            
         @self.app.route("/api/video_feed/<stream_type>")
         def video_feed(stream_type):
             """获取视频流（camera或screen）"""
@@ -486,7 +557,7 @@ class ConferenceClient:
             with self.frame_lock:
                 self.current_frame = frame_base64
 
-            time.sleep(1 / 30)  # 控制帧率
+            time.sleep(CHUNK / RATE)  # 控制帧率
 
         if self.video_capture:
             self.video_capture.release()
