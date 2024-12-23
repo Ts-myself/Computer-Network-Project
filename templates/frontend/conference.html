@@ -377,19 +377,34 @@
         function setupVideoStream(videoElement, userId, streamType) {
             const eventSource = new EventSource(`/api/video_feed/${streamType}`);
 
+            // 设置默认图片
+            videoElement.onerror = function () {
+                videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+            };
+
+            // 初始显示默认图片
+            videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+
             eventSource.onmessage = function (event) {
                 const data = JSON.parse(event.data);
 
                 // 检查这个视频流是否属于当前视频元素
                 const elementId = `${streamType}${userId}`;
                 if (videoElement.id === elementId) {
-                    // 更新视频帧
-                    videoElement.src = `data:image/jpeg;base64,${data.frame}`;
+                    if (data.frame) {
+                        // 更新视频帧
+                        videoElement.src = `data:image/jpeg;base64,${data.frame}`;
+                    } else {
+                        // 如果没有帧数据，显示默认图片
+                        videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+                    }
                 }
             };
 
             eventSource.onerror = function (error) {
                 console.error('Video stream error:', error);
+                // 发生错误时显示默认图片
+                videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
                 eventSource.close();
             };
 
