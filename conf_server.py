@@ -76,24 +76,33 @@ class ConferenceServer:
             try:
                 while self.running:
                     # Receive camera data via TCP
-                    # data = reader.recv(BIG_BUFFER_SIZE)
                     print(reader.getpeername())
-                    header = reader.recv(12)
+                    header = b""
+                    while len(header) < 12:
+                        packet = b""
+                        packet = reader.recv(12 - len(header))  # 接收剩余需要的数据量
+                        if not packet:
+                            # 如果没有收到数据，可能是连接被关闭了
+                            print("Connection closed by the client.")
+                            break
+                        header += packet  # 将接收到的数据追加到header变量中
+                    
                     if not header:
                         break
                     
-                    """
-                    img_length = len(img_bytes)
-                    header = struct.pack(">I", img_length)
-                    time_stamp = time.time()
-                    time_stamp_length = len(str(time_stamp))
-                    header += struct.pack(">I", time_stamp_length)
-                    """
                     frame_length = struct.unpack(">I", header[:4])[0]
                     frame_time = struct.unpack(">d", header[4:])[0]
                     print(f"Received screen header: {frame_length} bytes")
                     print(f"Received screen header time: {frame_time}")
-                    data = reader.recv(frame_length)
+                    data = b""
+                    while len(data) < frame_length:
+                        packet = b""
+                        packet = reader.recv(frame_length - len(data))  # 接收剩余需要的数据量
+                        if not packet:
+                            # 如果没有收到数据，可能是连接被关闭了
+                            print("Connection closed by the client.")
+                            break
+                        data += packet  # 将接收到的数据追加到data变量中
                     print(f"Received screen data: {len(data)} bytes")
                     # Forward the camera data to all other clients
                     for client_conn in self.client_tcps_screen.values():
@@ -107,14 +116,33 @@ class ConferenceServer:
             try:
                 while self.running:
                     # Receive camera data via TCP
-                    # data = reader.recv(BIG_BUFFER_SIZE)
                     print(reader.getpeername())
-                    header = reader.recv(4)
+                    header = b""
+                    while len(header) < 12:
+                        packet = b""
+                        packet = reader.recv(12 - len(header))  # 接收剩余需要的数据量
+                        if not packet:
+                            # 如果没有收到数据，可能是连接被关闭了
+                            print("Connection closed by the client.")
+                            break
+                        header += packet  # 将接收到的数据追加到header变量中
+
                     if not header:
                         break
-                    frame_length = struct.unpack(">I", header)[0]
+
+                    frame_length = struct.unpack(">I", header[:4])[0]
+                    frame_time = struct.unpack(">d", header[4:])[0]
                     print(f"Received camera header: {frame_length} bytes")
-                    data = reader.recv(frame_length)
+                    print(f"Received camera header time: {frame_time}")
+                    data = b""
+                    while len(data) < frame_length:
+                        packet = b""
+                        packet = reader.recv(frame_length - len(data))  # 接收剩余需要的数据量
+                        if not packet:
+                            # 如果没有收到数据，可能是连接被关闭了
+                            print("Connection closed by the client.")
+                            break
+                        data += packet  # 将接收到的数据追加到data变量中
                     print(f"Received camera data: {len(data)} bytes")
                     # Forward the camera data to all other clients
                     for client_conn in self.client_tcps_camera.values():
@@ -140,6 +168,15 @@ class ConferenceServer:
                             # if client_conn != reader:
                             client_conn.send(data)
                             print(f"Successfully forwarded control message to {client_conn.getpeername()}")
+                    elif control_message == 2:
+                        print(f"Received control message: {control_message}")
+                        print(f"Received control message time: {control_time}")
+                        # Forward the control message to all other clients
+                        for client_conn in self.client_tcps_control.values():
+                            # if client_conn != reader:
+                            client_conn.send(data)
+                            print(f"Successfully forwarded control message to {client_conn.getpeername()}")
+                    
             except Exception as e:
                 print(f"[Error] Control handling error: {str(e)}")
         else:
@@ -363,5 +400,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_WYT, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
