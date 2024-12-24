@@ -67,7 +67,7 @@ class ConferenceServer:
 
                     # Forward the audio data to all other clients
                     for client_addr in self.client_udps:
-                        if client_addr != addr:  # Don't send back to the sender
+                        if client_addr == addr:  # Don't send back to the sender
                             writer.sendto(data, client_addr)
 
             except Exception as e:
@@ -251,17 +251,6 @@ class ConferenceServer:
         self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
         self.sock_screen.listen(5)
 
-        # # audio
-        # print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
-        # self.sock_aud = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # self.sock_aud.bind((self.server_ip, self.data_ports["audio"]))
-
-        # # Start audio handler thread
-        # threading.Thread(
-        #     target=self.handle_data,
-        #     args=(self.sock_aud, self.sock_aud, "audio"),
-        #     daemon=True,
-        # ).start()
 
         while self.running:
             # Accept new TCP client for control handling
@@ -288,6 +277,15 @@ class ConferenceServer:
             threading.Thread(
                 target=self.handle_data,
                 args=(client_conn, self.client_tcps_screen, "screen"),
+            ).start()
+            
+            # Accept new UDP client for audio handling
+            print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
+            self.sock_aud = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock_aud.bind((self.server_ip, self.data_ports["audio"]))
+            threading.Thread(
+                target=self.handle_data,
+                args=(self.sock_aud, self.sock_aud, "audio"), daemon=True,
             ).start()
 
 

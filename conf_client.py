@@ -12,7 +12,6 @@ import base64
 import struct
 from threading import Lock
 import numpy as np
-from pydub import AudioSegment
 import queue
 import struct
 import time
@@ -361,31 +360,32 @@ class ConferenceClient:
             print(f"[Error] Failed to receive camera data: {str(e)}")
 
 
-    def start_audio(self):
-        try:
-            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind((self.client_ip, self.client_audio_port))
-            udp_socket.setblocking(False)  # 设置非阻塞模式
+    def audio_sender(self):
+        
+        input_stream = self.audio.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            frames_per_buffer=CHUNK,
+            input=True,
+        )
+        
 
-            input_stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                input=True,
-            )
-            output_stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                output=True,
-            )
+        while self.on_meeting and self.microphone_on:
+            sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
+            # self.output_stream.write(input_stream.read(CHUNK)) 
+            timestamp = time.time()
+            packet = struct.pack("d", timestamp) + sent_audio
+            self.audio_udp_socket.sendto(packet, (self.server_ip, self.server_audio_port))
+
+    def audio_receiver(self):
 
         while self.on_meeting:
+            
             recv_audio, addr = self.audio_udp_socket.recvfrom(65535)
             timestamp = struct.unpack("d", recv_audio[:8])[0]
             audio_data = recv_audio[8:]
+            
 
             current_time = time.time()
             delay = current_time - timestamp
@@ -508,7 +508,6 @@ class ConferenceClient:
             threading.Thread(target=self.recv_msg).start()
 
             # Start audio thread
-            # threading.Thread(target=self.start_audio).start()
             sender_thread = threading.Thread(target=self.audio_sender)
             sender_thread.start()
             receiver_thread = threading.Thread(target=self.audio_receiver)
