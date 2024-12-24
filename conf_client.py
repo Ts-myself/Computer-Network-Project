@@ -507,6 +507,10 @@ class ConferenceClient:
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
+            # Start camera and screen sending thread
+            threading.Thread(target=self.send_camera).start()
+            threading.Thread(target=self.recv_camera).start()
+
             # Start audio thread
             sender_thread = threading.Thread(target=self.audio_sender)
             sender_thread.start()
