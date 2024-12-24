@@ -15,9 +15,10 @@ import numpy as np
 import queue
 import struct
 import time
+import uuid
 
 
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_HLC
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
@@ -35,6 +36,7 @@ class ConferenceClient:
         self,
     ):
         # sync client
+        self.unique_id = uuid.uuid4().bytes 
         self.is_working = True
         self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
         self.server_ip = SERVER_IP
@@ -63,13 +65,14 @@ class ConferenceClient:
         self.microphone_on = True
         self.speaker_on = True
 
-        self.audio_lock = Lock()
         self.audio_buffers = {}
-        self.mixed_audio = queue.Queue(maxsize=100)
+        self.mixed_audio = queue.Queue(maxsize=10)
         
-        self.audio_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.audio_udp_socket.bind((self.client_ip, self.client_audio_port))
+        # self.audio_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # self.audio_udp_socket.bind((self.client_ip, self.client_audio_port))
         # self.audio_udp_socket.setblocking(False)  # 设置非阻塞模式
+
+        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
 
         self.output_stream = self.audio.open(
             format=FORMAT,
@@ -176,7 +179,7 @@ class ConferenceClient:
             while self.on_meeting:
                 data = self.sock_msg.recv(BUFFER_SIZE)
                 counter += 1
-                print(f"message count: {counter}")
+                # print(f"message count: {counter}")
                 if data:
                     # Parse the received JSON message
                     msg_data = json.loads(data.decode())
@@ -257,11 +260,11 @@ class ConferenceClient:
                     break
                 frame_length = struct.unpack(">I", header[:4])[0]
                 frame_time = struct.unpack(">d", header[4:])[0]
-                print('Successfully receive header')
-                print(f"frame length: {frame_length}")
+                # print('Successfully receive header')
+                # print(f"frame length: {frame_length}")
                 now_time = time.time()
                 time_gap = now_time - frame_time
-                print(f"frame time gap: {time_gap}")
+                # print(f"frame time gap: {time_gap}")
                 if time_gap > SCREEN_TIME_MAX_GAP and now_time - self.last_control_screen_time > 1:
                     # 1 slow screen send
                     self.send_control(1, now_time)
@@ -274,7 +277,7 @@ class ConferenceClient:
                         break
                     data += packet
                 # data = self.sock_screen.recv(frame_length)
-                print('Successfully receive camera data')
+                # print('Successfully receive camera data')
                 frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
@@ -298,7 +301,7 @@ class ConferenceClient:
                     break
                 _, frame_encode = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
                 frame_length = len(frame_encode)
-                print(f"camera frame length: {frame_length}")
+                # print(f"camera frame length: {frame_length}")
                 header = struct.pack(">I", frame_length)
                 time_stamp = time.time()
                 header += struct.pack(">d", time_stamp)
@@ -330,11 +333,11 @@ class ConferenceClient:
                     break
                 frame_length = struct.unpack(">I", header[:4])[0]
                 frame_time = struct.unpack(">d", header[4:])[0]
-                print('Successfully receive header')
-                print(f"frame length: {frame_length}")
+                # print('Successfully receive header')
+                # print(f"frame length: {frame_length}")
                 now_time = time.time()
                 time_gap = now_time - frame_time
-                print(f"frame time gap: {time_gap}")
+                # print(f"frame time gap: {time_gap}")
                 if time_gap > CAMERA_TIME_MAX_GAP and now_time - self.last_control_camera_time > 1:
                     # 2 slow camera send
                     self.send_control(2, now_time)
@@ -346,7 +349,7 @@ class ConferenceClient:
                         print("Connection closed")
                         break
                     data += packet
-                print('Successfully receive camera data')
+                # print('Successfully receive camera data')
                 frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
                 # frame = cv2.resize(frame, (640, 480))
                 _, buffer = cv2.imencode(".jpg", frame)
@@ -369,36 +372,52 @@ class ConferenceClient:
             frames_per_buffer=CHUNK,
             input=True,
         )
-        
 
-        while self.on_meeting and self.microphone_on:
+        while self.on_meeting:
             sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
-            # self.output_stream.write(input_stream.read(CHUNK)) 
+            
             timestamp = time.time()
-            packet = struct.pack("d", timestamp) + sent_audio
-            self.audio_udp_socket.sendto(packet, (self.server_ip, self.server_audio_port))
+            packet = struct.pack(f"!d16s", timestamp, self.unique_id) + sent_audio
+            
+            header = struct.pack("!I", len(packet))
+            if self.microphone_on:
+                try:
+                    self.sock_audio.send(header + packet)
+                except Exception as e:
+                    print(f"Error sending audio: {e}")
+                    break
 
     def audio_receiver(self):
 
         while self.on_meeting:
             
-            recv_audio, addr = self.audio_udp_socket.recvfrom(65535)
-            timestamp = struct.unpack("d", recv_audio[:8])[0]
-            audio_data = recv_audio[8:]
+            header = self.sock_audio.recv(4)
+            if len(header) < 4:
+                continue
             
+            packet_length = struct.unpack("!I", header)[0]
 
+            # 读取完整的数据包
+            packet = self.sock_audio.recv(packet_length)
+            while len(packet) < packet_length:
+                packet += self.sock_audio.recv(packet_length - len(packet))
+            
+            # 解包数据
+            timestamp, unique_id = struct.unpack("!d16s", packet[:24])
+            audio_data = packet[24:]
+
+            # print(f"Received audio from client: {unique_id.hex()}, time: {timestamp}, data: {audio_data[:10]}")
+ 
             current_time = time.time()
             delay = current_time - timestamp
             if delay > 0.5:  # 丢弃延迟超过 500ms 的音频
                 continue
             
-            ip = addr[0]
-
             # 将音频数据加入队列
-            if ip not in self.audio_buffers:
-                self.audio_buffers[ip] = queue.Queue(maxsize=10)
+            if unique_id not in self.audio_buffers:
+                self.audio_buffers[unique_id] = queue.Queue(maxsize=10)
 
-            user_queue = self.audio_buffers[ip]
+            user_queue = self.audio_buffers[unique_id]
             try:
                 user_queue.put(audio_data, block=False)
             except queue.Full:
@@ -436,59 +455,26 @@ class ConferenceClient:
                 # 剪裁混音数据
                 mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(np.int16)
 
-            # self.output_stream.write(mixed_audio_array.tobytes())
-
             
+            if self.speaker_on:
+                self.output_stream.write(mixed_audio_array.tobytes())
 
-            try:
-                # print(self.mixed_audio.qsize())
-                self.mixed_audio.put_nowait(mixed_audio_array.tobytes())
-
-            except queue.Full:
-                print('shit')
-                self.mixed_audio.get()
-                self.mixed_audio.put(mixed_audio_array.tobytes())
-
-            finally:
-                time.sleep(CHUNK / RATE)
                 
+            # to flask web
+
             # try:
-            #     current_time = time.time()
-            #     self.mixed_audio.put_nowait((current_time, mixed_audio_array.tobytes()))
+            #     # print(self.mixed_audio.qsize())
+            #     self.mixed_audio.put_nowait(mixed_audio_array.tobytes())
+
             # except queue.Full:
-            #     print('Queue is full, dropping the oldest packet.')
-            #     self.mixed_audio.get()
-            #     self.mixed_audio.put((current_time, mixed_audio_array.tobytes()))
+            #     # print('shit')
+            #     # self.mixed_audio.get()
+            #     # self.mixed_audio.put(mixed_audio_array.tobytes())
+            #     pass
+
             # finally:
-            #     time.sleep(CHUNK / RATE)
+            #     time.sleep(CHUNK / RATE)       
 
-
-                
-
-
-    def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
-        """
-        running task: keep sharing (capture and send) certain type of data from server or clients (P2P)
-        you can create different functions for sharing various kinds of data
-        """
-        pass
-
-    def share_switch(self, data_type):
-        """
-        switch for sharing certain type of data (screen, camera, audio, etc.)
-        """
-        pass
-
-    def keep_recv(self, recv_conn, data_type, decompress=None):
-        """
-        running task: keep receiving certain type of data (save or output)
-        you can create other functions for receiving various kinds of data
-        """
-
-    def output_data(self):
-        """
-        running task: output received stream data
-        """
 
     def start_conference(self):
         """
@@ -501,6 +487,8 @@ class ConferenceClient:
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
+            self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
+            
             # Start control receiving thread
             threading.Thread(target=self.recv_control).start()
             
@@ -512,12 +500,9 @@ class ConferenceClient:
             threading.Thread(target=self.recv_camera).start()
 
             # Start audio thread
-            sender_thread = threading.Thread(target=self.audio_sender)
-            sender_thread.start()
-            receiver_thread = threading.Thread(target=self.audio_receiver)
-            receiver_thread.start()
-            mixer_thread = threading.Thread(target=self.audio_mixer)
-            mixer_thread.start()
+            threading.Thread(target=self.audio_sender).start()
+            threading.Thread(target=self.audio_receiver).start()
+            threading.Thread(target=self.audio_mixer).start()
 
             # 自动开启视频流
             self.is_streaming = True
@@ -590,8 +575,10 @@ class ConferenceClient:
                 pass
             elif action == "toggle_mic":
                 self.microphone_on = not self.microphone_on
+                print(f"[INFO] Microphone status: {self.microphone_on}")
             elif action == "toggle_speaker":
                 self.speaker_on = not self.speaker_on
+                print(f"[INFO] Speaker status: {self.speaker_on}")
             elif action == "switch_meeting":
                 data = request.json
                 self.conference_id = data["conference_id"]
@@ -637,21 +624,23 @@ class ConferenceClient:
         def audio_feed():
             def generate_audio():
                 
-                # send wav header
-                yield generate_wav_header(
-                    sample_rate=RATE,
-                    bits_per_sample=BYTES_PER_SAMPLE * 8,
-                    channels=CHANNELS
-                )
+                pass
                 
-                while self.on_meeting and self.speaker_on:
-                    try:
-                        mixed_audio = self.mixed_audio.get(block=True, timeout=0.1)
-                    except queue.Empty:
-                        mixed_audio = b'\x00' * CHUNK
+                # send wav header
+                # yield generate_wav_header(
+                #     sample_rate=RATE,
+                #     bits_per_sample=BYTES_PER_SAMPLE * 8,
+                #     channels=CHANNELS
+                # )
+                
+                # while self.on_meeting and self.speaker_on:
+                #     print(self.mixed_audio.qsize())
+                #     try:
+                #         mixed_audio = self.mixed_audio.get(block=True, timeout=0.1)
+                #     except queue.Empty:
+                #         mixed_audio = b'\x00' * CHUNK
 
-                    # self.output_stream.write(mixed_audio)
-                    yield mixed_audio
+                #     yield mixed_audio
 
             return Response(generate_audio(), mimetype="audio/wav")
             
