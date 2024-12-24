@@ -13,7 +13,7 @@ import struct
 from threading import Lock
 import time
 
-SERVER_IP = SERVER_IP_PUBLIC_WYT
+SERVER_IP = SERVER_IP_LOCAL
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
