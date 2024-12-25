@@ -192,6 +192,16 @@
             cursor: not-allowed;
         }
 
+        .username-display {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 1;
+        }
     </style>
 </head>
 
@@ -260,7 +270,45 @@
         const maxParticipantsPerPage = 6;
         let currentPage = 0;
         let participants = []; // 用于存储参与者列表
+        let participant_num = 0;
         let recv_msgs = []; // 用于存储接收到的消息
+
+        function initUserInfo() {
+            fetch('/api/client_info')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('user-name').textContent = data.username;
+                    document.getElementById('conference-id').textContent = data.conference_id;
+                });
+        }
+
+        // 页面加载时初始化
+        initUserInfo();
+        // 创建 SSE 连接
+        const updateEventSource = new EventSource('/api/update_client_info');
+
+        // 当接收到数据时触发
+        updateEventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            // 将client_info对象转换为数组格式
+            if (data.client_info && typeof data.client_info === 'object') {
+                participants = Object.entries(data.client_info).map(([client_ip, info]) => ({
+                    client_ip,
+                    username: info.username,
+                    join_time: info.join_time
+                }));
+                participant_num = data.participant_num;
+                document.getElementById('conference-id').textContent = data.conference_id;
+                updateVideoGrid();
+            } else {
+                console.error('Invalid client_info format:', data.client_info);
+            }
+        };
+
+        // 错误处理
+        updateEventSource.onerror = (error) => {
+            console.error('SSE 错误：', error);
+        };
 
         // 添加视频网格布局管理函数
         function updateVideoGrid() {
@@ -289,18 +337,24 @@
                 const videoContainer = document.createElement('div');
                 videoContainer.className = 'video-container';
 
+                // 添加用户名显示
+                const usernameDisplay = document.createElement('div');
+                usernameDisplay.className = 'username-display';
+                usernameDisplay.textContent = participant.username;
+                videoContainer.appendChild(usernameDisplay);
+
                 // 创建屏幕共享视频元素
-                const screenVideo = document.createElement('img'); // 使用img替代video
+                const screenVideo = document.createElement('img');
                 screenVideo.className = 'screen-display';
-                screenVideo.id = `screen${participant.id}`;
+                screenVideo.id = `screen${participant.client_ip}`;
 
                 const cameraContainer = document.createElement('div');
                 cameraContainer.className = 'camera-container';
 
                 // 创建摄像头视频元素
-                const cameraVideo = document.createElement('img'); // 使用img替代video
+                const cameraVideo = document.createElement('img');
                 cameraVideo.className = 'user-camera';
-                cameraVideo.id = `camera${participant.id}`;
+                cameraVideo.id = `camera${participant.client_ip}`;
 
                 cameraContainer.appendChild(cameraVideo);
                 videoContainer.appendChild(screenVideo);
@@ -308,8 +362,8 @@
                 videoGrid.appendChild(videoContainer);
 
                 // 设置视频流
-                setupVideoStream(screenVideo, participant.id, 'screen');
-                setupVideoStream(cameraVideo, participant.id, 'camera');
+                setupVideoStream(screenVideo, participant.client_ip, 'screen');
+                setupVideoStream(cameraVideo, participant.client_ip, 'camera');
             });
 
             // 更新分页按钮状态
@@ -332,50 +386,9 @@
             }
         });
 
-        // 添加参与者
-        function initializeParticipants() {
-            // 初始化一些默认参与者
-            participants = Array.from({ length: 0 }, (_, i) => ({
-                id: i + 1,
-                name: `User ${i + 1}`
-            }));
-            updateVideoGrid();
 
-            // 监听 /api/client_info 以获取参与者数量
-            fetch('/api/client_info')
-                .then(response => response.json())
-                .then(data => {
-                    participants = Array.from({ length: data.participant_num }, (_, i) => ({
-                        id: i + 1,
-                        name: `User ${i + 1}`
-                    }));
-                    updateVideoGrid();
-                })
-                .catch(error => {
-                    console.error('Error fetching participant info:', error);
-                });
-
-            console.log('WebSocket connection closed');
-            // 可以在这里添加重连逻辑
-        }
-
-        function initUserInfo() {
-            fetch('/api/client_info')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('user-name').textContent = data.username;
-                    document.getElementById('conference-id').textContent = data.conference_id;
-                });
-        }
-
-        // 页面加载时初始化
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeParticipants();
-            initUserInfo();
-        });
-
-        // 替换现有的simulateVideoStream函数
-        function setupVideoStream(videoElement, userId, streamType) {
+        // 换现有的simulateVideoStream函数
+        function setupVideoStream(videoElement, userIP, streamType) {
             const eventSource = new EventSource(`/api/video_feed/${streamType}`);
 
             // 设置默认图片
@@ -390,9 +403,9 @@
                 const data = JSON.parse(event.data);
 
                 // 检查这个视频流是否属于当前视频元素
-                const elementId = `${streamType}${userId}`;
+                const elementId = `${streamType}${userIP}`;
                 if (videoElement.id === elementId) {
-                    if (data.frame) {
+                    if (data.msg == "ok") {
                         // 更新视频帧
                         videoElement.src = `data:image/jpeg;base64,${data.frame}`;
                     } else {
