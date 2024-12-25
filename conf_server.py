@@ -311,6 +311,7 @@ class MainServer:
         self.app = Flask(__name__)
         self.setup_routes()
 
+
     def generate_conference_id(self):
         """
         Generate a unique conference ID using UUID.
@@ -409,6 +410,7 @@ class MainServer:
             del self.conference_servers[conference_id]
             print(self.conference_servers)
             return jsonify({"status": "success"})
+        
 
     def start(self):
         """
@@ -419,5 +421,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_PUBLIC_HLC, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()

@@ -18,7 +18,7 @@ import time
 import uuid
 
 
-SERVER_IP = SERVER_IP_PUBLIC_HLC
+SERVER_IP = SERVER_IP_LOCAL
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
@@ -98,11 +98,26 @@ class ConferenceClient:
 
         # camera and screen
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.camera_status = False
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.screen_status = False
 
         # connect to frontend
         self.app = Flask(__name__)
         self.setup_routes()
+
+
+
+        camera_path = 'static/camera_off.png'  
+        screen_path = 'static/screen_off.png'
+        frame = cv2.imread(camera_path, cv2.IMREAD_UNCHANGED)
+        _, buffer = cv2.imencode(".jpg", frame)
+        frame_base64 = base64.b64encode(buffer).decode("utf-8")
+        self.camera_off_img = frame_base64
+        frame = cv2.imread(screen_path, cv2.IMREAD_UNCHANGED)
+        _, buffer = cv2.imencode(".jpg", frame)
+        frame_base64 = base64.b64encode(buffer).decode("utf-8")
+        self.screen_off_img = frame_base64
 
     def create_conference(self):
         """
@@ -281,8 +296,12 @@ class ConferenceClient:
                 frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                self.current_frame = frame_base64
-                
+                if self.screen_status:
+                    self.current_frame = frame_base64
+                else:
+                    if self.camera_status == False:
+                        self.current_frame = self.camera_off_img
+                    
 
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
@@ -355,7 +374,11 @@ class ConferenceClient:
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 # with self.frame_lock:
-                self.current_frame = frame_base64
+                if self.camera_status:
+                    self.current_frame = frame_base64
+                else:
+                    if self.screen_status == False:
+                        self.current_frame = self.camera_off_img
                 # time.sleep(1 / 30)  # 控制帧率
                 
 
@@ -498,6 +521,8 @@ class ConferenceClient:
             # Start camera and screen sending thread
             threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
+            threading.Thread(target=self.send_screen).start()
+            threading.Thread(target=self.recv_screen).start()
 
             # Start audio thread
             threading.Thread(target=self.audio_sender).start()
@@ -570,9 +595,9 @@ class ConferenceClient:
                 self.conference_id = data["conference_id"]
                 self.join_conference(self.conference_id)
             elif action == "toggle_camera":
-                pass
+                self.camera_status = not self.camera_status
             elif action == "toggle_screen":
-                pass
+                self.screen_status = not self.screen_status
             elif action == "toggle_mic":
                 self.microphone_on = not self.microphone_on
                 print(f"[INFO] Microphone status: {self.microphone_on}")
