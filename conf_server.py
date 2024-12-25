@@ -364,6 +364,7 @@ class MainServer:
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
             self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip, "p2p")
+            # self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip, "cs")
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
 

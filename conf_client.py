@@ -70,6 +70,7 @@ class ConferenceClient:
         
         self.recv_msgs = []
         self.new_msgs = []
+        self.conn_mode = "p2p"
 
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -226,6 +227,7 @@ class ConferenceClient:
     def recv_control(self):
         print("[INFO] Starting control receiving...")
         try:
+            # print("1111111111111111111111111111111111111111111111111111111111111111")
             while self.on_meeting:
                 control_message = self.sock_control.recv(12)
                 message = struct.unpack(">I", control_message[:4])[0]
@@ -528,7 +530,7 @@ class ConferenceClient:
         self.sock_camera.listen(2)
 
         self.sock_screen.bind((host, SERVER_SCREEN_PORT))
-        self.sock_camera.listen(2)
+        self.sock_screen.listen(2)
         
         self.sock_audio.bind((host, SERVER_AUDIO_PORT))
         self.sock_audio.listen(2)
@@ -537,11 +539,16 @@ class ConferenceClient:
         # get client conn
         print("test-----------------------------------------------------------")
         # print(f"{host} and {SERVER_CONTROL_PORT}")
-        client_conn,client_addr = self.sock_control.accept()
-        client_conn,client_addr = self.sock_msg.accept()
-        client_conn,client_addr = self.sock_camera.accept()
-        client_conn,client_addr = self.sock_screen.accept()
-        client_conn,client_addr = self.sock_audio.accept()
+        conn,addr = self.sock_control.accept()
+        self.sock_control = conn
+        conn,addr = self.sock_msg.accept()
+        self.sock_msg = conn
+        conn,addr = self.sock_camera.accept()
+        self.sock_camera = conn
+        conn,addr = self.sock_screen.accept()
+        self.sock_screen = conn
+        conn,addr = self.sock_audio.accept()
+        self.sock_audio = conn
         print("fail-----------------------------------------------------------------------")
 
         threading.Thread(target=self.recv_control).start()
@@ -552,6 +559,10 @@ class ConferenceClient:
         threading.Thread(target=self.audio_mixer).start()
 
         self.is_streaming = True
+        # while self.conn_mode == "p2p":
+            # print("in---------------")
+            # time.sleep(0.5)
+        # print("out------------------")
 
         
         pass
