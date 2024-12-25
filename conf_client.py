@@ -16,6 +16,7 @@ import queue
 import struct
 import time
 import uuid
+import netifaces as ni
 
 
 SERVER_IP = SERVER_IP_PUBLIC_WGX
@@ -28,6 +29,20 @@ SERVER_CAMERA_PORT = 8893
 
 FRONT_PORT = 9000
 
+
+def get_all_ip_addresses():
+    ip_addresses = {}
+    # 获取网络接口信息
+    interfaces = ni.interfaces()
+    for interface_name in interfaces:
+        if interface_name.startswith("wl"):
+            # 获取每个接口的地址信息
+            addrs = ni.ifaddresses(interface_name)
+            # 检查是否有IPv4地址
+            if ni.AF_INET in addrs:
+                for addr in addrs[ni.AF_INET]:
+                    ip_addresses[interface_name] = addr['addr']
+    return ip_addresses
 
 
 
@@ -117,6 +132,7 @@ class ConferenceClient:
                 self.on_meeting = True
                 threading.Thread(target=self.create_conference_conn).start()
                 # print("llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll")
+                
                 # self.join_conference(self.conference_id)
             else:
                 print("[Error] Failed to create conference")
@@ -131,13 +147,13 @@ class ConferenceClient:
             response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
             if response.status_code == 200:
                 data = response.json()
-                if data["mode"] == "cs":
+                if data['mode'] == "cs":
                     self.conference_id = conference_id
                     self.on_meeting = True
                     self.server_ip = SERVER_IP
                     print(f"[Success] Joined conference {conference_id}")
                     self.start_conference()
-                elif data["mode"] == "p2p":
+                elif data['mode'] == "p2p":
                     self.conference_id = conference_id
                     self.on_meeting = True
                     print(f"[Success] Joined conference {conference_id}")
@@ -489,7 +505,19 @@ class ConferenceClient:
 
     def create_conference_conn(self):
         # self.sock_control.bind()
-        host = socket.gethostbyname(socket.gethostname())
+        # hostname = socket.gethostname()
+        # host = socket.gethostbyname(socket.gethostname())  
+        ip_addresses = get_all_ip_addresses()
+        if (len(ip_addresses) == 0):
+            print("No IP address found.")
+            return
+        if (len(ip_addresses) == 1):
+            host = list(ip_addresses.values())[0]
+        else :
+            print("Multiple IP addresses found!!!!")
+            return
+        print(f"{host}")
+
         self.sock_control.bind((host, SERVER_CONTROL_PORT))
         self.sock_control.listen(2)
 
@@ -507,13 +535,14 @@ class ConferenceClient:
 
         # print("test whether block")
         # get client conn
-        # print("test-----------------------------------------------------------")
+        print("test-----------------------------------------------------------")
+        # print(f"{host} and {SERVER_CONTROL_PORT}")
         client_conn,client_addr = self.sock_control.accept()
         client_conn,client_addr = self.sock_msg.accept()
         client_conn,client_addr = self.sock_camera.accept()
         client_conn,client_addr = self.sock_screen.accept()
         client_conn,client_addr = self.sock_audio.accept()
-        # print("fail-----------------------------------------------------------------------")
+        print("fail-----------------------------------------------------------------------")
 
         threading.Thread(target=self.recv_control).start()
         threading.Thread(target=self.recv_msg).start()

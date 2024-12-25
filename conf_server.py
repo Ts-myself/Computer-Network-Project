@@ -223,35 +223,70 @@ class ConferenceServer:
         """
         Start the ConferenceServer and begin handling clients and data streams.
         """
+        # test 
         # control
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
-        self.sock_control.bind((self.server_ip, self.data_ports["control"]))
+        self.sock_control.bind((self.server_ip, self.data_ports["control"]+100))
         self.sock_control.listen(5)
 
         # message
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Message server started at {self.server_ip}:{self.data_ports['msg']}")
-        self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
+        self.sock_msg.bind((self.server_ip, self.data_ports["msg"]+100))
         self.sock_msg.listen(5)
         
         # audio
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
-        self.sock_audio.bind((self.server_ip, self.data_ports["audio"]))
+        self.sock_audio.bind((self.server_ip, self.data_ports["audio"]+100))
         self.sock_audio.listen(5) 
 
         # screen
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Screen server started at {self.server_ip}:{self.data_ports['screen']}")
-        self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
+        self.sock_screen.bind((self.server_ip, self.data_ports["screen"]+100))
         self.sock_screen.listen(5)
         
         # camera
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
-        self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
+        self.sock_camera.bind((self.server_ip, self.data_ports["camera"]+100))
         self.sock_camera.listen(5)
+
+
+
+
+        # already
+        # # control
+        # self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
+        # self.sock_control.bind((self.server_ip, self.data_ports["control"]))
+        # self.sock_control.listen(5)
+
+        # # message
+        # self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # print(f"Message server started at {self.server_ip}:{self.data_ports['msg']}")
+        # self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
+        # self.sock_msg.listen(5)
+        
+        # # audio
+        # self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
+        # self.sock_audio.bind((self.server_ip, self.data_ports["audio"]))
+        # self.sock_audio.listen(5) 
+
+        # # screen
+        # self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # print(f"Screen server started at {self.server_ip}:{self.data_ports['screen']}")
+        # self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
+        # self.sock_screen.listen(5)
+        
+        # # camera
+        # self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
+        # self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
+        # self.sock_camera.listen(5)
 
 
         while self.running:
@@ -316,7 +351,8 @@ class MainServer:
         Generate a unique conference ID using UUID.
         :return: A unique 8-digit string ID.
         """
-        return str(uuid.uuid4().int)[:8]
+        # return str(uuid.uuid4().int)[:8]
+        return "12345678"
 
     def setup_routes(self):
         @self.app.route("/create_conference", methods=["POST"])
