@@ -15,23 +15,39 @@ import math
 from PIL import Image, ImageGrab
 from config import *
 from datetime import datetime
+import struct
 
 # audio setting
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 44100  
+RATE = 44100
 CHUNK = 1024
-# audio = pyaudio.PyAudio()
-# streamin = audio.open(
-#     format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
-# )
-# streamout = audio.open(
-#     format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK
-# )
+BYTES_PER_SAMPLE = 2
 
-# # print warning if no available camera
-# cap = cv2.VideoCapture(0)
-# can_capture_camera = True
+
+def generate_wav_header(sample_rate, bits_per_sample, channels):
+    """生成 WAV 格式头部"""
+    byte_rate = sample_rate * channels * bits_per_sample // 8
+    block_align = channels * bits_per_sample // 8
+
+    wav_header = struct.pack(
+        '<4sI4s4sIHHIIHH4sI',
+        b'RIFF',             # ChunkID
+        36 + CHUNK,          # ChunkSize
+        b'WAVE',             # Format
+        b'fmt ',             # Subchunk1ID
+        16,                  # Subchunk1Size
+        1,                   # AudioFormat (PCM)
+        channels,            # NumChannels
+        sample_rate,         # SampleRate
+        byte_rate,           # ByteRate
+        block_align,         # BlockAlign
+        bits_per_sample,     # BitsPerSample
+        b'data',             # Subchunk2ID
+        0                    # Subchunk2Size
+    )
+    return wav_header
+
 
 
 # my_screen_size = pyautogui.size()
