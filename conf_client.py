@@ -95,6 +95,8 @@ class ConferenceClient:
         self.current_frame = None
         self.video_thread = None
         self.is_streaming = False
+        self.current_camera_frame = None
+        self.current_screen_frame = None
         
         # control
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -105,9 +107,9 @@ class ConferenceClient:
 
         # camera and screen
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.camera_status = False
+        self.is_camera_streaming = False
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.screen_status = False
+        self.is_screen_streaming = False
 
         # connect to frontend
         self.app = Flask(__name__)
@@ -317,11 +319,9 @@ class ConferenceClient:
                 frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                if self.screen_status:
-                    self.current_frame = frame_base64
-                else:
-                    if self.camera_status == False:
-                        self.current_frame = self.camera_off_img
+                if self.is_screen_streaming:
+                    self.current_screen_frame = frame_base64
+                
                     
 
         except Exception as e:
@@ -395,11 +395,9 @@ class ConferenceClient:
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 # with self.frame_lock:
-                if self.camera_status:
-                    self.current_frame = frame_base64
-                else:
-                    if self.screen_status == False:
-                        self.current_frame = self.camera_off_img
+                if self.is_camera_streaming:
+                    self.current_camera_frame = frame_base64
+               
                 # time.sleep(1 / 30)  # 控制帧率
                 
 
@@ -630,11 +628,9 @@ class ConferenceClient:
             elif action == "toggle_camera":
                 self.is_camera_streaming = not self.is_camera_streaming
                 print(f"[INFO] Camera streaming: {self.is_camera_streaming}")
-                self.camera_status = not self.camera_status
             elif action == "toggle_screen":
                 self.is_screen_streaming = not self.is_screen_streaming
                 print(f"[INFO] Screen streaming: {self.is_screen_streaming}")
-                self.screen_status = not self.screen_status
             elif action == "toggle_mic":
                 self.microphone_on = not self.microphone_on
                 print(f"[INFO] Microphone status: {self.microphone_on}")

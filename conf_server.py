@@ -317,26 +317,47 @@ class ConferenceServer:
         self.sock_camera.listen(5)
 
 
-        while self.running:
-            # Accept new TCP client for control handling
-            client_conn, client_addr = self.sock_control.accept()
-            self.client_tcps_control[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data, 
-                args=(client_conn, client_conn, "control")
-            ).start()
+        # while self.running:
+        #     # Accept new TCP client for control handling
+        #     client_conn, client_addr = self.sock_control.accept()
+        #     self.client_tcps_control[client_addr] = client_conn
+        #     threading.Thread(
+        #         target=self.handle_data, 
+        #         args=(client_conn, client_conn, "control")
+        #     ).start()
 
-            # Accept new TCP client for message handling
-            client_conn, client_addr = self.sock_msg.accept()
-            self.client_tcps_msg[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data, 
-                args=(client_conn, self.client_tcps_msg, "msg")
-            ).start()
+        #     # Accept new TCP client for message handling
+        #     client_conn, client_addr = self.sock_msg.accept()
+        #     self.client_tcps_msg[client_addr] = client_conn
+        #     threading.Thread(
+        #         target=self.handle_data, 
+        #         args=(client_conn, self.client_tcps_msg, "msg")
+        #     ).start()
 
-            # Accept new TCP client for camera handling
-            client_conn, client_addr = self.sock_camera.accept()
-            self.client_tcps_camera[client_addr] = client_conn
+        #     # Accept new TCP client for camera handling
+        #     client_conn, client_addr = self.sock_camera.accept()
+        #     self.client_tcps_camera[client_addr] = client_conn
+        #     threading.Thread(
+        #         target=self.handle_data,
+        #         args=(client_conn, self.client_tcps_screen, "camera"),
+        #     ).start()
+
+        #     # Accept new TCP client for screen handling
+        #     client_conn, client_addr = self.sock_screen.accept()
+        #     self.client_tcps_screen[client_addr] = client_conn
+        #     threading.Thread(
+        #         target=self.handle_data,
+        #         args=(client_conn, self.client_tcps_screen, "screen"),
+        #     ).start()
+            
+        #     # Accept new UDP client for audio handling
+        #     client_conn, client_addr = self.sock_audio.accept()
+        #     self.client_tcps_audio[client_addr] = client_conn
+        #     threading.Thread(
+        #         target=self.handle_data,
+        #         args=(client_conn, self.client_tcps_audio, "audio"),
+        #     ).start()
+
         # Start accept threads for each socket
         accept_threads = [
             ("info", self.sock_info),
@@ -351,21 +372,6 @@ class ConferenceServer:
                 target=self.accept_connections, args=(sock, sock_type), daemon=True
             ).start()
 
-            # Accept new TCP client for screen handling
-            client_conn, client_addr = self.sock_screen.accept()
-            self.client_tcps_screen[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data,
-                args=(client_conn, self.client_tcps_screen, "screen"),
-            ).start()
-            
-            # Accept new UDP client for audio handling
-            client_conn, client_addr = self.sock_audio.accept()
-            self.client_tcps_audio[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data,
-                args=(client_conn, self.client_tcps_audio, "audio"),
-            ).start()
         # Keep main thread alive
         while self.running:
             time.sleep(1)
