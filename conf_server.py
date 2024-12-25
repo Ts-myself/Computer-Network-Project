@@ -6,6 +6,7 @@ import threading
 import socket
 import struct
 import time
+import json
 
 
 class ConferenceServer:
@@ -61,11 +62,11 @@ class ConferenceServer:
                 while self.running:
                     # Receive audio data via UDP
                     data = reader.recv(BUFFER_SIZE)
-                    
+
                     # Forward the audio data to all other clients
                     for client_conn in self.client_tcps_audio.values():
                         # if client_conn == reader: # debug only
-                        if client_conn != reader: # Don't send back to the sender
+                        if client_conn != reader:  # Don't send back to the sender
                             client_conn.send(data)
 
             except Exception as e:
@@ -84,7 +85,7 @@ class ConferenceServer:
                             print("Connection closed by the client.")
                             break
                         header += packet  # 将接收到的数据追加到header变量中
-                    
+
                     if not header:
                         break
 
@@ -182,7 +183,7 @@ class ConferenceServer:
                             # if client_conn != reader:
                             client_conn.send(data)
                             # print(f"Successfully forwarded control message to {client_conn.getpeername()}")
-                    
+
             except Exception as e:
                 print(f"[Error] Control handling error: {str(e)}")
         else:
@@ -208,9 +209,7 @@ class ConferenceServer:
         """
         Boardcast client info to all clients.
         """
-        print(
-            f"[INFO] Broadcasting client info to {len(self.client_tcps_info)} clients"
-        )
+        print(f"[INFO] Broadcasting client info to {len(self.client_tcps_info)} clients")
         for client_conn in self.client_tcps_info.values():
             try:
                 print(f"[INFO] Sending to client: {client_conn.getpeername()}")
@@ -286,9 +285,7 @@ class ConferenceServer:
 
         # control
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(
-            f"Control server started at {self.server_ip}:{self.data_ports['control']}"
-        )
+        print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
         self.sock_control.bind((self.server_ip, self.data_ports["control"]))
         self.sock_control.listen(5)
 
@@ -297,32 +294,31 @@ class ConferenceServer:
         print(f"Message server started at {self.server_ip}:{self.data_ports['msg']}")
         self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
         self.sock_msg.listen(5)
-        
+
         # audio
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
         self.sock_audio.bind((self.server_ip, self.data_ports["audio"]))
-        self.sock_audio.listen(5) 
+        self.sock_audio.listen(5)
 
         # screen
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Screen server started at {self.server_ip}:{self.data_ports['screen']}")
         self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
         self.sock_screen.listen(5)
-        
+
         # camera
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
         self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
         self.sock_camera.listen(5)
 
-
         # while self.running:
         #     # Accept new TCP client for control handling
         #     client_conn, client_addr = self.sock_control.accept()
         #     self.client_tcps_control[client_addr] = client_conn
         #     threading.Thread(
-        #         target=self.handle_data, 
+        #         target=self.handle_data,
         #         args=(client_conn, client_conn, "control")
         #     ).start()
 
@@ -330,7 +326,7 @@ class ConferenceServer:
         #     client_conn, client_addr = self.sock_msg.accept()
         #     self.client_tcps_msg[client_addr] = client_conn
         #     threading.Thread(
-        #         target=self.handle_data, 
+        #         target=self.handle_data,
         #         args=(client_conn, self.client_tcps_msg, "msg")
         #     ).start()
 
@@ -349,7 +345,7 @@ class ConferenceServer:
         #         target=self.handle_data,
         #         args=(client_conn, self.client_tcps_screen, "screen"),
         #     ).start()
-            
+
         #     # Accept new UDP client for audio handling
         #     client_conn, client_addr = self.sock_audio.accept()
         #     self.client_tcps_audio[client_addr] = client_conn
@@ -368,9 +364,7 @@ class ConferenceServer:
         ]
 
         for sock_type, sock in accept_threads:
-            threading.Thread(
-                target=self.accept_connections, args=(sock, sock_type), daemon=True
-            ).start()
+            threading.Thread(target=self.accept_connections, args=(sock, sock_type), daemon=True).start()
 
         # Keep main thread alive
         while self.running:
@@ -392,7 +386,6 @@ class MainServer:
         self.app = Flask(__name__)
         self.setup_routes()
 
-
     def generate_conference_id(self):
         """
         Generate a unique conference ID using UUID.
@@ -409,9 +402,7 @@ class MainServer:
             """
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
-            self.conference_servers[conf_id] = ConferenceServer(
-                conf_id, self.conf_ports, client_ip, self.server_ip
-            )
+            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip)
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
             return jsonify(
@@ -499,7 +490,6 @@ class MainServer:
             del self.conference_servers[conference_id]
             print(self.conference_servers)
             return jsonify({"status": "success"})
-        
 
     def start(self):
         """

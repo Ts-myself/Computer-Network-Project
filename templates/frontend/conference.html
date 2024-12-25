@@ -388,7 +388,7 @@
 
 
         // 换现有的simulateVideoStream函数
-        function setupVideoStream(videoElement, userId, streamType) {
+        function setupVideoStream(videoElement, userIP, streamType) {
             const eventSource = new EventSource(`/api/video_feed/${streamType}`);
 
             // 设置默认图片
@@ -403,9 +403,9 @@
                 const data = JSON.parse(event.data);
 
                 // 检查这个视频流是否属于当前视频元素
-                const elementId = `${streamType}${userId}`;
+                const elementId = `${streamType}${userIP}`;
                 if (videoElement.id === elementId) {
-                    if (data.frame) {
+                    if (data.msg == "ok") {
                         // 更新视频帧
                         videoElement.src = `data:image/jpeg;base64,${data.frame}`;
                     } else {
