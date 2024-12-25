@@ -20,7 +20,7 @@ import uuid
 
 
 SERVER_INFO_PORT = 8887
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_WYT
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
@@ -38,7 +38,7 @@ class ConferenceClient:
         self,
     ):
         # sync client
-        self.unique_id = uuid.uuid4().bytes 
+        self.unique_id = uuid.uuid4().bytes
         self.is_working = True
         self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
         self.server_ip = SERVER_IP
@@ -50,7 +50,9 @@ class ConferenceClient:
         self.share_data = {}
         self.conference_id = None
         self.participant_num = 1
-
+        # struct pack uuid and ip
+        self.id = struct.pack('>16s', self.unique_id)
+        self.ip = struct.pack('>4s', socket.inet_aton(self.client_ip))
         # self.conference_info = None  # you may need to save and update some conference_info regularly
         self.client_info = {}
 
@@ -252,6 +254,43 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] Failed to receive control message: {str(e)}")    
 
+
+    def send_object(self, object, connection):
+            try:
+                object_length = len(object)
+                object_time = time.time()
+                header = struct.pack(">I", object_length)
+                header += struct.pack(">d", object_time)
+                header += self.id
+                header += self.ip
+                connection.send(header)
+                connection.send(object)
+                print(f"send object to {connection}")
+            except Exception as e:
+                print(f"Error sending object: {e}")
+
+    def receive_object(self, connection, length):
+        try:
+            object = b""
+            while len(object) < length:
+                packet = b""
+                packet += connection.recv(length - len(object))
+                if not packet:
+                    print("Connection closed")
+                    break
+                object += packet
+            return object
+        except Exception as e:
+            print(f"Error receiving object: {e}")
+            return None
+
+    def unpack_object(self, data):
+        object_length = struct.unpack(">I", data[:4])[0]
+        object_time = struct.unpack(">d", data[4:12])[0]
+        object_id = struct.unpack(">16s", data[12:28])[0]
+        object_ip = struct.unpack(">4s", data[28:32])[0]
+        return object_length, object_time, object_id, object_ip
+
     def send_screen(self):
         print("[INFO] Starting screen streaming...")
         try:
@@ -265,65 +304,36 @@ class ConferenceClient:
                     img_np = np.array(img)
                     img_np = cv2.resize(img_np, (640, 480))
                     _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
-                    img_bytes = img_encode.tobytes()
-                    img_length = len(img_bytes)
-                    # print(f"screen frame length: {img_length}")
-                    header = struct.pack(">I", img_length)
-                    time_stamp = time.time()
-                    header += struct.pack(">d", time_stamp)
-                    self.sock_screen.send(header)
-                    self.sock_screen.send(img_bytes)
-                    # time.sleep(1)
+                    self.send_object(img_encode.tobytes(), self.sock_screen)
+                    time.sleep(1/2)
                     time.sleep(self.screen_sleep_time)
                     self.screen_sleep_time -= SCREEN_SLEEP_DECREASE
                     if self.screen_sleep_time < 0:
                         self.screen_sleep_time = 0
         except Exception as e:
             print(f"[Error] Failed to send screen data: {str(e)}")
-    
+
     def recv_screen(self):
         print("[INFO] Starting screen receiving...")
         try:
             while self.on_meeting:
-                # header = self.sock_screen.recv(12)
-                header = b""
-                while len(header) < 12:
-                    packet = b""
-                    packet += self.sock_screen.recv(12 - len(header))
-                    if not packet:
-                        print("Connection closed")
-                        break
-                    header += packet
+                header = self.receive_object(self.sock_screen, HEADER_LENGTH)
+                print('Successfully receive screen header')
                 if not header:
                     break
-                frame_length = struct.unpack(">I", header[:4])[0]
-                frame_time = struct.unpack(">d", header[4:])[0]
-                # print('Successfully receive header')
-                # print(f"frame length: {frame_length}")
+                screen_length, screen_time, screen_id, screen_ip = self.unpack_object(header)
                 now_time = time.time()
-                time_gap = now_time - frame_time
-                # print(f"frame time gap: {time_gap}")
+                time_gap = now_time - screen_time
                 if time_gap > SCREEN_TIME_MAX_GAP and now_time - self.last_control_screen_time > 1:
                     # 1 slow screen send
                     self.send_control(1, now_time)
-                data = b""
-                while len(data) < frame_length:
-                    packet = b""
-                    packet = self.sock_screen.recv(frame_length - len(data))
-                    if not packet:
-                        print("Connection closed")
-                        break
-                    data += packet
-                # data = self.sock_screen.recv(frame_length)
-                # print('Successfully receive camera data')
-                frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+                screen_data = self.receive_object(self.sock_screen, screen_length)
+                print('Successfully receive screen data')
+                frame = cv2.imdecode(np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR)
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 if self.is_screen_streaming:
                     self.current_screen_frame = frame_base64
-                
-                    
-
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
     
@@ -336,17 +346,9 @@ class ConferenceClient:
             cap = initialize_camera()
             while self.on_meeting:
                 ret, frame = cap.read()
-                if not ret:
-                    print(f"帧捕获失败。")
-                    break
                 _, frame_encode = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
-                frame_length = len(frame_encode)
-                # print(f"camera frame length: {frame_length}")
-                header = struct.pack(">I", frame_length)
-                time_stamp = time.time()
-                header += struct.pack(">d", time_stamp)
-                self.sock_camera.send(header)
-                self.sock_camera.send(frame_encode)
+                self.send_object(frame_encode.tobytes(), self.sock_camera)
+                time.sleep(1/5)
                 time.sleep(self.camera_sleep_time)
                 self.camera_sleep_time -= CAMERA_SLEEP_DECREASE
                 if self.camera_sleep_time < 0:
@@ -358,55 +360,34 @@ class ConferenceClient:
     def recv_camera(self):
         print("[INFO] Starting camera receiving...")
         try:
-            counter = 0
             while self.on_meeting:
-                # header = self.sock_camera.recv(4)
-                header = b""
-                while len(header) < 12:
-                    packet = b""
-                    packet += self.sock_camera.recv(12 - len(header))
-                    if not packet:
-                        print("Connection closed")
-                        break
-                    header += packet
+                header = self.receive_object(self.sock_camera, HEADER_LENGTH)
+                print('Successfully receive camera header')
                 if not header:
                     break
-                frame_length = struct.unpack(">I", header[:4])[0]
-                frame_time = struct.unpack(">d", header[4:])[0]
-                # print('Successfully receive header')
-                # print(f"frame length: {frame_length}")
+                camera_length, camera_time, camera_id, camera_ip = self.unpack_object(header)
                 now_time = time.time()
-                time_gap = now_time - frame_time
-                # print(f"frame time gap: {time_gap}")
+                time_gap = now_time - camera_time
                 if time_gap > CAMERA_TIME_MAX_GAP and now_time - self.last_control_camera_time > 1:
                     # 2 slow camera send
                     self.send_control(2, now_time)
-                data = b""
-                while len(data) < frame_length:
-                    packet = b""
-                    packet = self.sock_camera.recv(frame_length - len(data))
-                    if not packet:
-                        print("Connection closed")
-                        break
-                    data += packet
-                # print('Successfully receive camera data')
-                frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-                # frame = cv2.resize(frame, (640, 480))
+                camera_data = self.receive_object(self.sock_camera, camera_length)
+                print('Successfully receive camera data')
+                frame = cv2.imdecode(np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR)
                 _, buffer = cv2.imencode(".jpg", frame)
+                # show
+                # cv2.imshow('frame', frame)
+                # cv2.waitKey(1)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                # with self.frame_lock:
                 if self.is_camera_streaming:
                     self.current_camera_frame = frame_base64
-               
-                # time.sleep(1 / 30)  # 控制帧率
-                
 
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
 
 
     def audio_sender(self):
-        
+        print("[INFO] Starting audio streaming...")
         input_stream = self.audio.open(
             format=FORMAT,
             channels=CHANNELS,
@@ -414,52 +395,35 @@ class ConferenceClient:
             frames_per_buffer=CHUNK,
             input=True,
         )
-
-        while self.on_meeting:
-            sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
-            
-            timestamp = time.time()
-            packet = struct.pack(f"!d16s", timestamp, self.unique_id) + sent_audio
-            
-            header = struct.pack("!I", len(packet))
-            if self.microphone_on:
-                try:
-                    self.sock_audio.send(header + packet)
-                except Exception as e:
-                    print(f"Error sending audio: {e}")
-                    break
+        try:
+            while self.on_meeting:
+                sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
+                # timestamp = time.time()
+                # packet = struct.pack(f"!d16s", timestamp, self.unique_id) + sent_audio
+                # header = struct.pack("!I", len(packet))
+                if self.microphone_on:
+                    self.send_object(sent_audio, self.sock_audio)
+                    
+        except Exception as e:
+            print(f"[Error] Failed to send audio data: {str(e)}")
 
     def audio_receiver(self):
 
         while self.on_meeting:
-            
-            header = self.sock_audio.recv(4)
-            if len(header) < 4:
-                continue
-            
-            packet_length = struct.unpack("!I", header)[0]
-
-            # 读取完整的数据包
-            packet = self.sock_audio.recv(packet_length)
-            while len(packet) < packet_length:
-                packet += self.sock_audio.recv(packet_length - len(packet))
-            
-            # 解包数据
-            timestamp, unique_id = struct.unpack("!d16s", packet[:24])
-            audio_data = packet[24:]
-
-            # print(f"Received audio from client: {unique_id.hex()}, time: {timestamp}, data: {audio_data[:10]}")
- 
-            current_time = time.time()
-            delay = current_time - timestamp
+            header = self.receive_object(self.sock_audio, HEADER_LENGTH)
+            print('Successfully receive audio header')
+            audio_length, audio_time, audio_id, audio_ip = self.unpack_object(header)
+            audio_data = self.receive_object(self.sock_audio, audio_length)
+            print('Successfully receive audio data')
+            now_time = time.time()
+            delay = now_time - audio_time
             if delay > 0.5:  # 丢弃延迟超过 500ms 的音频
                 continue
-            
-            # 将音频数据加入队列
-            if unique_id not in self.audio_buffers:
-                self.audio_buffers[unique_id] = queue.Queue(maxsize=10)
 
-            user_queue = self.audio_buffers[unique_id]
+            if audio_id not in self.audio_buffers:
+                self.audio_buffers[audio_id] = queue.Queue(maxsize=10)
+
+            user_queue = self.audio_buffers[audio_id]
             try:
                 user_queue.put(audio_data, block=False)
             except queue.Full:
@@ -545,13 +509,13 @@ class ConferenceClient:
             # Strat camera thread
             threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
-            threading.Thread(target=self.send_screen).start()
-            threading.Thread(target=self.recv_screen).start()
+            # threading.Thread(target=self.send_screen).start()
+            # threading.Thread(target=self.recv_screen).start()
 
             # Start audio thread
-            threading.Thread(target=self.audio_sender).start()
-            threading.Thread(target=self.audio_receiver).start()
-            threading.Thread(target=self.audio_mixer).start()
+            # threading.Thread(target=self.audio_sender).start()
+            # threading.Thread(target=self.audio_receiver).start()
+            # threading.Thread(target=self.audio_mixer).start()
 
             # 自动开启视频流
             self.is_streaming = True
@@ -707,11 +671,11 @@ class ConferenceClient:
             
         @self.app.route("/api/video_feed/<stream_type>")
         def video_feed(stream_type):
-            """获取视频流（camera或screen）"""
 
             def generate():
                 while self.on_meeting and (self.is_camera_streaming or self.is_screen_streaming):
                     current_frame = self.current_camera_frame if stream_type == "camera" else self.current_screen_frame
+
                     if current_frame:
                         # 构建包含用户信息的帧数据
                         frame_data = {
@@ -719,9 +683,19 @@ class ConferenceClient:
                             "username": self.username,
                             "client_ip": self.client_ip,
                             "stream_type": stream_type,
+                            "msg": 'ok'
                         }
                         yield f"data: {json.dumps(frame_data)}\n\n"
-                    time.sleep(1 / 30)
+                    else:
+                        frame_data = {
+                            "frame": None,
+                            "username": None,
+                            "client_ip": None,
+                            "stream_type": None,
+                            "msg": 'no'
+                        }
+                        
+                    # time.sleep(1 / 30)
 
             return Response(generate(), mimetype="text/event-stream")
 
