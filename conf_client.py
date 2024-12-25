@@ -18,7 +18,7 @@ import time
 import uuid
 
 
-SERVER_IP = SERVER_IP_PUBLIC_HLC
+SERVER_IP = SERVER_IP_LOCAL
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
@@ -114,7 +114,10 @@ class ConferenceClient:
                 data = response.json()
                 self.conference_id = data["conference_id"]
                 print(f"[Success] Created conference with ID: {self.conference_id}")
-                self.join_conference(self.conference_id)
+                self.on_meeting = True
+                threading.Thread(target=self.create_conference_conn).start()
+                # print("llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll")
+                # self.join_conference(self.conference_id)
             else:
                 print("[Error] Failed to create conference")
         except Exception as e:
@@ -127,10 +130,19 @@ class ConferenceClient:
         try:
             response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
             if response.status_code == 200:
-                self.conference_id = conference_id
-                self.on_meeting = True
-                print(f"[Success] Joined conference {conference_id}")
-                self.start_conference()
+                data = response.json()
+                if data["mode"] == "cs":
+                    self.conference_id = conference_id
+                    self.on_meeting = True
+                    self.server_ip = SERVER_IP
+                    print(f"[Success] Joined conference {conference_id}")
+                    self.start_conference()
+                elif data["mode"] == "p2p":
+                    self.conference_id = conference_id
+                    self.on_meeting = True
+                    print(f"[Success] Joined conference {conference_id}")
+                    self.server_ip = data["clients"]
+                    self.start_conference()
             else:
                 print("[Error] Failed to join conference")
         except Exception as e:
@@ -475,7 +487,45 @@ class ConferenceClient:
             # finally:
             #     time.sleep(CHUNK / RATE)       
 
+    def create_conference_conn(self):
+        # self.sock_control.bind()
+        host = socket.gethostbyname(socket.gethostname())
+        self.sock_control.bind((host, SERVER_CONTROL_PORT))
+        self.sock_control.listen(2)
 
+        self.sock_msg.bind((host, SERVER_MSG_PORT))
+        self.sock_msg.listen(2)
+
+        self.sock_camera.bind((host, SERVER_CAMERA_PORT))
+        self.sock_camera.listen(2)
+
+        self.sock_screen.bind((host, SERVER_SCREEN_PORT))
+        self.sock_camera.listen(2)
+        
+        self.sock_audio.bind((host, SERVER_AUDIO_PORT))
+        self.sock_audio.listen(2)
+
+        # print("test whether block")
+        # get client conn
+        # print("test-----------------------------------------------------------")
+        client_conn,client_addr = self.sock_control.accept()
+        client_conn,client_addr = self.sock_msg.accept()
+        client_conn,client_addr = self.sock_camera.accept()
+        client_conn,client_addr = self.sock_screen.accept()
+        client_conn,client_addr = self.sock_audio.accept()
+        # print("fail-----------------------------------------------------------------------")
+
+        threading.Thread(target=self.recv_control).start()
+        threading.Thread(target=self.recv_msg).start()
+        threading.Thread(target=self.recv_camera).start()
+        threading.Thread(target=self.recv_screen).start()
+        threading.Thread(target=self.audio_receiver).start()
+        threading.Thread(target=self.audio_mixer).start()
+
+        self.is_streaming = True
+
+        
+        pass
     def start_conference(self):
         """
         init conns when create or join a conference with necessary conference_info

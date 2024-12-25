@@ -8,7 +8,7 @@ import struct
 
 
 class ConferenceServer:
-    def __init__(self, conference_id, data_ports, host_ip, server_ip):
+    def __init__(self, conference_id, data_ports, host_ip, server_ip, communicate_mode="cs"):
         """
         Initialize a ConferenceServer instance.
         :param conference_id: Unique identifier for the conference.
@@ -29,7 +29,7 @@ class ConferenceServer:
         self.client_tcps_screen = dict()
         self.client_tcps_audio = dict()
 
-        self.mode = "Client-Server"  # Default mode
+        self.mode = communicate_mode
         self.running = True
 
     def handle_data(self, reader, writer, data_type):
@@ -255,45 +255,45 @@ class ConferenceServer:
 
 
         while self.running:
-            # Accept new TCP client for control handling
-            client_conn, client_addr = self.sock_control.accept()
-            self.client_tcps_control[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data, 
-                args=(client_conn, client_conn, "control")
-            ).start()
+            if self.mode == "cs":
+                # Accept new TCP client for control handling
+                client_conn, client_addr = self.sock_control.accept()
+                self.client_tcps_control[client_addr] = client_conn
+                threading.Thread(
+                    target=self.handle_data, 
+                    args=(client_conn, client_conn, "control")
+                ).start()
+                # Accept new TCP client for message handling
+                client_conn, client_addr = self.sock_msg.accept()
+                self.client_tcps_msg[client_addr] = client_conn
+                threading.Thread(
+                    target=self.handle_data, 
+                    args=(client_conn, self.client_tcps_msg, "msg")
+                ).start()
 
-            # Accept new TCP client for message handling
-            client_conn, client_addr = self.sock_msg.accept()
-            self.client_tcps_msg[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data, 
-                args=(client_conn, self.client_tcps_msg, "msg")
-            ).start()
+                # Accept new TCP client for camera handling
+                client_conn, client_addr = self.sock_camera.accept()
+                self.client_tcps_camera[client_addr] = client_conn
+                threading.Thread(
+                    target=self.handle_data,
+                    args=(client_conn, self.client_tcps_camera, "camera"),
+                ).start()
 
-            # Accept new TCP client for camera handling
-            client_conn, client_addr = self.sock_camera.accept()
-            self.client_tcps_camera[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data,
-                args=(client_conn, self.client_tcps_camera, "camera"),
-            ).start()
-
-            # Accept new TCP client for screen handling
-            client_conn, client_addr = self.sock_screen.accept()
-            self.client_tcps_screen[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data,
-                args=(client_conn, self.client_tcps_screen, "screen"),
-            ).start()
-            
-            # Accept new UDP client for audio handling
-            client_conn, client_addr = self.sock_audio.accept()
-            self.client_tcps_audio[client_addr] = client_conn
-            threading.Thread(
-                target=self.handle_data,
-                args=(client_conn, self.client_tcps_audio, "audio"),
-            ).start()
+                # Accept new TCP client for screen handling
+                client_conn, client_addr = self.sock_screen.accept()
+                self.client_tcps_screen[client_addr] = client_conn
+                threading.Thread(
+                    target=self.handle_data,
+                    args=(client_conn, self.client_tcps_screen, "screen"),
+                ).start()
+                
+                # Accept new UDP client for audio handling
+                client_conn, client_addr = self.sock_audio.accept()
+                self.client_tcps_audio[client_addr] = client_conn
+                threading.Thread(
+                    target=self.handle_data,
+                    args=(client_conn, self.client_tcps_audio, "audio"),
+                ).start()
 
 
 class MainServer:
@@ -327,9 +327,12 @@ class MainServer:
             """
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
-            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip)
+            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip, "p2p")
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
+
+            conf_server = self.conference_servers[conf_id]
+            conf_server.clients_info[client_ip] = {"join_time": getCurrentTime()}
             return jsonify(
                 {
                     "status": "success",
@@ -360,18 +363,31 @@ class MainServer:
                     jsonify({"status": "error", "message": "Client already joined"}),
                     400,
                 )
-
+            
             conf_server = self.conference_servers[conference_id]
+            client_goal_ip = list(conf_server.clients_info.keys())
             conf_server.clients_info[client_ip] = {"join_time": getCurrentTime()}
-
-            print(conf_server.clients_info)
-            return jsonify(
-                {
-                    "status": "success",
-                    "conference_id": conference_id,
-                    "clients": conf_server.clients_info,
-                }
-            )
+            # print(conf_server.clients_info)
+            
+            if conf_server.mode == "cs":
+                return jsonify(
+                    {
+                        "status": "success",
+                        "mode": conf_server.mode,
+                        "conference_id": conference_id,
+                        "clients": conf_server.clients_info,
+                    }
+                )
+            else :
+                
+                return jsonify(
+                    {
+                        "status": "success",
+                        "mode": conf_server.mode,
+                        "conference_id": conference_id,
+                        "clients": client_goal_ip[0],
+                    }
+                )
 
         @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
         def handle_quit_conference(conference_id):
@@ -419,5 +435,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_PUBLIC_HLC, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
