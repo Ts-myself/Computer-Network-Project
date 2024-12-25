@@ -249,9 +249,11 @@ class ConferenceServer:
             try:
                 client_conn, client_addr = sock.accept()
                 print(f"[!!!] accept {sock_type}")
-
+                # if sock_type == "info" or self.mode == "cs":
                 if sock_type == "info":
                     self.client_tcps_info[client_addr] = client_conn
+                elif self.mode == "p2p":
+                    continue
                 elif sock_type == "control":
                     self.client_tcps_control[client_addr] = client_conn
                     threading.Thread(
@@ -434,7 +436,9 @@ class MainServer:
         self.main_server = None
         self.conference_servers = {}  # dict conference_id: ConferenceServer
         self.app = Flask(__name__)
+        # self.app.config['SECRET_KEY'] = 'secret!'
         self.setup_routes()
+        # self.socketio = SocketIO(self.app)
 
     def generate_conference_id(self):
         """
@@ -451,6 +455,8 @@ class MainServer:
             Create a new conference: Initialize and start a new ConferenceServer instance.
             :return: A dictionary with {status, message, conference_id, ports}.
             """
+            data = request.get_json()
+            client_username = data["username"]
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
             self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip, "p2p")
@@ -459,7 +465,11 @@ class MainServer:
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
 
             conf_server = self.conference_servers[conf_id]
-            conf_server.clients_info[client_ip] = {"join_time": getCurrentTime()}
+            conf_server.clients_info[client_ip] = {
+                "username": client_username,
+                "join_time": getCurrentTime(),
+            }
+
             return jsonify(
                 {
                     "status": "success",
@@ -512,8 +522,7 @@ class MainServer:
                         "clients": conf_server.clients_info,
                     }
                 )
-            else :
-                
+            elif conf_server.mode == "p2p" and len(client_goal_ip) == 0:
                 return jsonify(
                     {
                         "status": "success",
@@ -522,7 +531,16 @@ class MainServer:
                         "clients": client_goal_ip[0],
                     }
                 )
-            
+            else:
+                conf_server.mode = "cs"
+                return jsonify(
+                    {
+                        "status": "success",
+                        "mode": "p2p2cs",
+                        "conference_id": conference_id,
+                        "clients": client_goal_ip[0],
+                    }
+                )
 
         @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
         def handle_quit_conference(conference_id):
@@ -565,6 +583,7 @@ class MainServer:
         """
         start MainServer
         """
+        # self.socketio.run(self.app, host=self.server_ip, port=self.server_port)
         self.app.run(host=self.server_ip, port=self.server_port)
 
 

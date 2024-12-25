@@ -25,6 +25,7 @@ import struct
 import time
 import uuid
 import netifaces as ni
+# from flask_socketio import SocketIO
 
 
 SERVER_INFO_PORT = 8887
@@ -141,6 +142,18 @@ class ConferenceClient:
         # connect to frontend
         self.app = Flask(__name__)
         self.setup_routes()
+        # self.socketio = SocketIO(self.app)
+
+        camera_path = "static/camera_off.png"
+        screen_path = "static/screen_off.png"
+        frame = cv2.imread(camera_path, cv2.IMREAD_UNCHANGED)
+        _, buffer = cv2.imencode(".jpg", frame)
+        frame_base64 = base64.b64encode(buffer).decode("utf-8")
+        self.camera_off_img = frame_base64
+        frame = cv2.imread(screen_path, cv2.IMREAD_UNCHANGED)
+        _, buffer = cv2.imencode(".jpg", frame)
+        frame_base64 = base64.b64encode(buffer).decode("utf-8")
+        self.screen_off_img = frame_base64
 
         camera_path = "static/camera_off.png"
         screen_path = "static/screen_off.png"
@@ -158,14 +171,17 @@ class ConferenceClient:
         create a conference: send create-conference request to server and obtain necessary data to
         """
         try:
-            response = requests.post(f"{self.server_addr}/create_conference")
+            data = {"username": self.username, "client_ip": self.client_ip}
+            response = requests.post(
+                f"{self.server_addr}/create_conference", json=data
+            )
+            # print("llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll")
             if response.status_code == 200:
                 data = response.json()
                 self.conference_id = data["conference_id"]
                 print(f"[Success] Created conference with ID: {self.conference_id}")
                 self.on_meeting = True
                 threading.Thread(target=self.create_conference_conn).start()
-                # print("llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll")
                 
                 # self.join_conference(self.conference_id)
             else:
@@ -195,6 +211,12 @@ class ConferenceClient:
                     self.on_meeting = True
                     print(f"[Success] Joined conference {conference_id}")
                     self.server_ip = data["clients"]
+                    self.start_conference()
+                elif data['mode'] == "p2p2cs":
+                    self.conference_id = conference_id
+                    self.on_meeting = True
+                    print(f"[Success] Joined conference {conference_id}")
+                    self.server_ip = SERVER_IP
                     self.start_conference()
             else:
                 print("[Error] Failed to join conference")
@@ -596,6 +618,16 @@ class ConferenceClient:
         self.sock_audio.bind((host, SERVER_AUDIO_PORT))
         self.sock_audio.listen(2)
 
+        try:
+            self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
+            threading.Thread(target=self.recv_info).start()
+        except Exception as e:
+            print(f"[Error] Failed to start conference: {str(e)}")
+            self.on_meeting = False
+        finally:
+            pass
+            # Terminate PyAudio when the conference ends
+            # self.audio.terminate()
         # print("test whether block")
         # get client conn
         print("test-----------------------------------------------------------")
@@ -633,7 +665,7 @@ class ConferenceClient:
         """
         try:
             self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
-            self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
+            # self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
@@ -643,7 +675,7 @@ class ConferenceClient:
             threading.Thread(target=self.recv_control).start()
 
             # Start info thread
-            threading.Thread(target=self.recv_info).start()
+            # threading.Thread(target=self.recv_info).start()
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
@@ -840,6 +872,40 @@ class ConferenceClient:
 
             return Response(generate(), mimetype="text/event-stream")
 
+        # @self.app.route("/api/toggle_video", methods=["POST"])
+        # def toggle_video():
+        #     """切换视频流的开启/关闭状态"""
+        #     data = request.json
+        #     action = data.get("action")
+
+        #     if action == "start" and not self.is_streaming:
+        #         self.is_streaming = True
+        #         self.video_thread = threading.Thread(target=self.process_video)
+        #         self.video_thread.start()
+        #     elif action == "stop" and self.is_streaming:
+        #         self.is_streaming = False
+        #         if self.video_thread:
+        #             self.video_thread.join()
+
+        #     return jsonify({"status": "success"})
+        
+        # @self.socketio.on("p2p2cs")
+        # def handle_p2p2cs(data):
+        #     print(f"Received p2p2cs data: {data}")
+        #     #close all conns
+        #     self.sock_control.close()
+        #     self.sock_msg.close()
+        #     self.sock_camera.close()
+        #     self.sock_screen.close()
+        #     self.sock_audio.close()
+        #     #create new conns
+        #     self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #     self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #     self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #     self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #     self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #     self.start_conference()
+
     def start(self, remote=False):
         """
         execute functions based on the command line input
@@ -850,6 +916,12 @@ class ConferenceClient:
             debug=False,
             threaded=True,
         )
+        # self.socketio.run(
+        #     self.app, 
+        #     host="localhost" if not remote else SERVER_IP,
+        #     port=FRONT_PORT, 
+        #     debug=False,
+        # )
         while True:
             if not self.on_meeting:
                 status = "Free"
