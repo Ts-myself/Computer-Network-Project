@@ -5,6 +5,7 @@ from datetime import datetime
 import threading
 import socket
 import struct
+import time
 
 
 class ConferenceServer:
@@ -23,6 +24,7 @@ class ConferenceServer:
 
         self.clients_info = {}
 
+        self.client_tcps_info = dict()
         self.client_tcps_control = dict()
         self.client_tcps_msg = dict()
         self.client_tcps_camera = dict()
@@ -202,6 +204,21 @@ class ConferenceServer:
         # except Exception as e:
         #     print(f"[ERROR] Error in logging task: {e}")
 
+    def boardcast_client_info(self):
+        """
+        Boardcast client info to all clients.
+        """
+        print(
+            f"[INFO] Broadcasting client info to {len(self.client_tcps_info)} clients"
+        )
+        for client_conn in self.client_tcps_info.values():
+            try:
+                print(f"[INFO] Sending to client: {client_conn.getpeername()}")
+                client_conn.send(json.dumps(self.clients_info).encode())
+                print(f"[INFO] Successfully sent to {client_conn.getpeername()}")
+            except Exception as e:
+                print(f"[ERROR] Failed to send to client {client_conn}: {str(e)}")
+
     def cancel_conference(self):
         """
         Cancel the conference and disconnect all clients.
@@ -219,13 +236,59 @@ class ConferenceServer:
         # except Exception as e:
         #     print(f"[ERROR] Error while cancelling conference: {e}")
 
+    def accept_connections(self, sock, sock_type):
+        """
+        Handle accepting connections for a specific socket type
+        """
+        while self.running:
+            try:
+                client_conn, client_addr = sock.accept()
+                print(f"[!!!] accept {sock_type}")
+
+                if sock_type == "info":
+                    self.client_tcps_info[client_addr] = client_conn
+                elif sock_type == "control":
+                    self.client_tcps_control[client_addr] = client_conn
+                    threading.Thread(
+                        target=self.handle_data,
+                        args=(client_conn, client_conn, "control"),
+                    ).start()
+                elif sock_type == "msg":
+                    self.client_tcps_msg[client_addr] = client_conn
+                    threading.Thread(
+                        target=self.handle_data,
+                        args=(client_conn, self.client_tcps_msg, "msg"),
+                    ).start()
+                elif sock_type == "camera":
+                    self.client_tcps_camera[client_addr] = client_conn
+                    threading.Thread(
+                        target=self.handle_data,
+                        args=(client_conn, self.client_tcps_camera, "camera"),
+                    ).start()
+                elif sock_type == "screen":
+                    self.client_tcps_screen[client_addr] = client_conn
+                    threading.Thread(
+                        target=self.handle_data,
+                        args=(client_conn, self.client_tcps_screen, "screen"),
+                    ).start()
+            except Exception as e:
+                print(f"[Error] Error accepting {sock_type} connection: {str(e)}")
+
     def start(self):
         """
         Start the ConferenceServer and begin handling clients and data streams.
         """
+        # info
+        self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print(f"Info server started at {self.server_ip}:{self.data_ports['info']}")
+        self.sock_info.bind((self.server_ip, self.data_ports["info"]))
+        self.sock_info.listen(5)
+
         # control
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
+        print(
+            f"Control server started at {self.server_ip}:{self.data_ports['control']}"
+        )
         self.sock_control.bind((self.server_ip, self.data_ports["control"]))
         self.sock_control.listen(5)
 
@@ -274,9 +337,18 @@ class ConferenceServer:
             # Accept new TCP client for camera handling
             client_conn, client_addr = self.sock_camera.accept()
             self.client_tcps_camera[client_addr] = client_conn
+        # Start accept threads for each socket
+        accept_threads = [
+            ("info", self.sock_info),
+            ("control", self.sock_control),
+            ("msg", self.sock_msg),
+            ("camera", self.sock_camera),
+            ("screen", self.sock_screen),
+        ]
+
+        for sock_type, sock in accept_threads:
             threading.Thread(
-                target=self.handle_data,
-                args=(client_conn, self.client_tcps_camera, "camera"),
+                target=self.accept_connections, args=(sock, sock_type), daemon=True
             ).start()
 
             # Accept new TCP client for screen handling
@@ -294,6 +366,9 @@ class ConferenceServer:
                 target=self.handle_data,
                 args=(client_conn, self.client_tcps_audio, "audio"),
             ).start()
+        # Keep main thread alive
+        while self.running:
+            time.sleep(1)
 
 
 class MainServer:
@@ -307,7 +382,7 @@ class MainServer:
         self.server_port = main_port
         self.conf_ports = conf_ports
         self.main_server = None
-        self.conference_servers = {}  # map conference_id to ConferenceServer
+        self.conference_servers = {}  # dict conference_id: ConferenceServer
         self.app = Flask(__name__)
         self.setup_routes()
 
@@ -328,7 +403,9 @@ class MainServer:
             """
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
-            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip)
+            self.conference_servers[conf_id] = ConferenceServer(
+                conf_id, self.conf_ports, client_ip, self.server_ip
+            )
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
             return jsonify(
@@ -347,6 +424,8 @@ class MainServer:
             :param conference_id: The ID of the conference the client wants to join.
             :return: Dictionary with the result (success or error).
             """
+            data = request.get_json()
+            client_ip, client_username = data["client_ip"], data["username"]
 
             if conference_id not in self.conference_servers:
                 return (
@@ -354,7 +433,7 @@ class MainServer:
                     404,
                 )
 
-            client_ip = request.remote_addr
+            # client_ip = request.remote_addr
 
             if client_ip in self.conference_servers[conference_id].clients_info.keys():
                 return (
@@ -363,9 +442,13 @@ class MainServer:
                 )
 
             conf_server = self.conference_servers[conference_id]
-            conf_server.clients_info[client_ip] = {"join_time": getCurrentTime()}
+            conf_server.clients_info[client_ip] = {
+                "username": client_username,
+                "join_time": getCurrentTime(),
+            }
 
             print(conf_server.clients_info)
+            conf_server.boardcast_client_info()
             return jsonify(
                 {
                     "status": "success",

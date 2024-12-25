@@ -19,13 +19,7 @@ LOG_INTERVAL = 2
 
 BUFFER_SIZE = 1024
 BIG_BUFFER_SIZE = 65535
-CONF_SERVE_PORTS = {
-    'control': 8889,
-    'msg': 8890,
-    'audio': 8891,
-    'screen': 8892,
-    'camera': 8893
-}
+CONF_SERVE_PORTS = {"info": 8887, "control": 8889, "msg": 8890, "audio": 8891, "screen": 8892, "camera": 8893}
 
 SCREEN_TIME_MAX_GAP = 0.3
 CAMERA_TIME_MAX_GAP = 0.3
@@ -36,4 +30,3 @@ CAMERA_SLEEP_INCREASE = 0.01
 
 SCREEN_SLEEP_DECREASE = 0.0001
 CAMERA_SLEEP_DECREASE = 0.0001
-

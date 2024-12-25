@@ -18,6 +18,8 @@ import time
 import uuid
 
 
+
+SERVER_INFO_PORT = 8887
 SERVER_IP = SERVER_IP_LOCAL
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
@@ -49,12 +51,12 @@ class ConferenceClient:
         self.conference_id = None
         self.participant_num = 1
 
-        self.conference_info = None  # you may need to save and update some conference_info regularly
+        # self.conference_info = None  # you may need to save and update some conference_info regularly
+        self.client_info = {}
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
         
         self.recv_msgs = []
-        self.new_msgs = []
 
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -80,9 +82,14 @@ class ConferenceClient:
             rate=RATE,
             output=True,
         )
+        # info
+        self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # message
+        self.new_msgs = []
+        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # 添加视频相关的属性
-        self.video_path = "test_video.mp4"
         self.video_capture = None
         self.frame_lock = Lock()
         self.current_frame = None
@@ -140,11 +147,13 @@ class ConferenceClient:
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
         try:
-            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
+            data = {"username": self.username, "client_ip": self.client_ip}
+            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}", json=data)
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
                 print(f"[Success] Joined conference {conference_id}")
+                self.client_info = response.json()["clients"]
                 self.start_conference()
             else:
                 print("[Error] Failed to join conference")
@@ -186,6 +195,18 @@ class ConferenceClient:
                 print("[Error] Failed to cancel conference")
         except Exception as e:
             print(f"[Error] {str(e)}")
+
+    def recv_info(self):
+        print("[INFO] Starting info receiving...")
+        try:
+            while self.on_meeting:
+                data = self.sock_info.recv(BUFFER_SIZE)
+                if data:
+                    info_data = json.loads(data.decode())
+                    print(f"[INFO] Received info: {info_data}")
+                    self.client_info = info_data
+        except Exception as e:
+            print(f"[Error] Failed to receive info: {str(e)}")
 
     def recv_msg(self):
         print("[INFO] Starting message receiving...")
@@ -507,6 +528,7 @@ class ConferenceClient:
         """
         try:
             self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
+            self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
@@ -515,10 +537,14 @@ class ConferenceClient:
             # Start control receiving thread
             threading.Thread(target=self.recv_control).start()
             
+            # Start info thread
+            threading.Thread(target=self.recv_info).start()
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
-            # Start camera and screen sending thread
+            # Start audio thread
+            # threading.Thread(target=self.start_audio).start()
+            # Strat camera thread
             threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
             threading.Thread(target=self.send_screen).start()
@@ -567,24 +593,31 @@ class ConferenceClient:
         def dashboard():
             return render_template("/frontend/dashboard.html")
 
-        @self.app.route("/api/client_info", methods=["POST"])
+        @self.app.route("/api/client_info", methods=["POST", "GET"])
         def post_client_info():
-            data = request.json
-            self.username = data["username"]
-            return jsonify({"status": "success"})
+            if request.method == "POST":
+                data = request.json
+                self.username = data["username"]
+                return jsonify({"status": "success"})
+            else:  # GET request
+                return jsonify({"username": self.username, "conference-id": self.conference_id})
 
-        @self.app.route("/api/client_info", methods=["GET"])
-        def get_client_info():
-            return jsonify(
-                {
-                    "client_ip": self.client_ip,
-                    "username": self.username,
-                    "on_meeting": self.on_meeting,
-                    "conference_id": self.conference_id,
-                    "participant_num": self.participant_num,
-                    "share_data": self.share_data,
-                }
-            )
+        @self.app.route("/api/update_client_info")
+        def update_client_info():
+            def generate():
+                while True:
+                    infos = {
+                        "client_ip": self.client_ip,
+                        "username": self.username,
+                        "on_meeting": self.on_meeting,
+                        "conference_id": self.conference_id,
+                        "participant_num": self.participant_num,
+                        "client_info": self.client_info,
+                    }
+                    yield f"data: {json.dumps(infos)}\n\n"
+                    time.sleep(3)
+
+            return Response(generate(), mimetype="text/event-stream")
 
         @self.app.route("/api/button/<action>", methods=["POST"])
         def button_action(action):
@@ -595,8 +628,12 @@ class ConferenceClient:
                 self.conference_id = data["conference_id"]
                 self.join_conference(self.conference_id)
             elif action == "toggle_camera":
+                self.is_camera_streaming = not self.is_camera_streaming
+                print(f"[INFO] Camera streaming: {self.is_camera_streaming}")
                 self.camera_status = not self.camera_status
             elif action == "toggle_screen":
+                self.is_screen_streaming = not self.is_screen_streaming
+                print(f"[INFO] Screen streaming: {self.is_screen_streaming}")
                 self.screen_status = not self.screen_status
             elif action == "toggle_mic":
                 self.microphone_on = not self.microphone_on
@@ -604,12 +641,15 @@ class ConferenceClient:
             elif action == "toggle_speaker":
                 self.speaker_on = not self.speaker_on
                 print(f"[INFO] Speaker status: {self.speaker_on}")
+                print(f"[INFO] Microphone on: {self.microphone_on}")
             elif action == "switch_meeting":
                 data = request.json
                 self.conference_id = data["conference_id"]
                 self.join_conference(self.conference_id)
+                print(f"[INFO] Switch to conference {self.conference_id}")
             elif action == "exit_meeting":
                 self.quit_conference()
+                print("[INFO] Quit meeting")
 
             print(f"[INFO] Button action: {action}")
 
@@ -674,37 +714,20 @@ class ConferenceClient:
             """获取视频流（camera或screen）"""
 
             def generate():
-                while self.is_streaming and self.on_meeting:
-                    with self.frame_lock:
-                        if self.current_frame:
-                            # 构建包含用户信息的帧数据
-                            frame_data = {
-                                "frame": self.current_frame,
-                                "username": self.username,
-                                "client_ip": self.client_ip,
-                                "stream_type": stream_type,
-                            }
-                            yield f"data: {json.dumps(frame_data)}\n\n"
+                while self.on_meeting and (self.is_camera_streaming or self.is_screen_streaming):
+                    current_frame = self.current_camera_frame if stream_type == "camera" else self.current_screen_frame
+                    if current_frame:
+                        # 构建包含用户信息的帧数据
+                        frame_data = {
+                            "frame": current_frame,
+                            "username": self.username,
+                            "client_ip": self.client_ip,
+                            "stream_type": stream_type,
+                        }
+                        yield f"data: {json.dumps(frame_data)}\n\n"
                     time.sleep(1 / 30)
 
             return Response(generate(), mimetype="text/event-stream")
-
-        @self.app.route("/api/toggle_video", methods=["POST"])
-        def toggle_video():
-            """切换视频流的开启/关闭状态"""
-            data = request.json
-            action = data.get("action")
-
-            if action == "start" and not self.is_streaming:
-                self.is_streaming = True
-                self.video_thread = threading.Thread(target=self.process_video)
-                self.video_thread.start()
-            elif action == "stop" and self.is_streaming:
-                self.is_streaming = False
-                if self.video_thread:
-                    self.video_thread.join()
-
-            return jsonify({"status": "success"})
 
     def start(self, remote=False):
         """
