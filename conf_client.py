@@ -3,7 +3,15 @@ import json
 import socket
 import requests
 import threading
-from flask import Flask, request, jsonify, render_template, redirect, Response, stream_with_context
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    render_template,
+    redirect,
+    Response,
+    stream_with_context,
+)
 import time
 import sys
 import argparse
@@ -18,9 +26,8 @@ import time
 import uuid
 
 
-
 SERVER_INFO_PORT = 8887
-SERVER_IP = SERVER_IP_PUBLIC_WYT
+SERVER_IP = SERVER_IP_LOCAL 
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
@@ -29,8 +36,6 @@ SERVER_SCREEN_PORT = 8892
 SERVER_CAMERA_PORT = 8893
 
 FRONT_PORT = 9000
-
-
 
 
 class ConferenceClient:
@@ -45,7 +50,9 @@ class ConferenceClient:
         self.client_ip = socket.gethostbyname(socket.gethostname())
         self.username = "User"
         self.on_meeting = False  # status
-        self.conns = None  # you may need to maintain multiple conns for a single conference
+        self.conns = (
+            None  # you may need to maintain multiple conns for a single conference
+        )
         self.support_data_types = []  # for some types of data
         self.share_data = {}
         self.conference_id = None
@@ -57,7 +64,7 @@ class ConferenceClient:
         self.client_info = {}
 
         self.recv_data = None  # you may need to save received streamd data from other clients in conference
-        
+
         self.recv_msgs = []
 
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -71,12 +78,12 @@ class ConferenceClient:
 
         self.audio_buffers = {}
         self.mixed_audio = queue.Queue(maxsize=10)
-        
+
         # self.audio_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         # self.audio_udp_socket.bind((self.client_ip, self.client_audio_port))
         # self.audio_udp_socket.setblocking(False)  # 设置非阻塞模式
 
-        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self.output_stream = self.audio.open(
             format=FORMAT,
@@ -99,7 +106,7 @@ class ConferenceClient:
         self.is_streaming = False
         self.current_camera_frame = None
         self.current_screen_frame = None
-        
+
         # control
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.last_control_screen_time = time.time()
@@ -117,10 +124,8 @@ class ConferenceClient:
         self.app = Flask(__name__)
         self.setup_routes()
 
-
-
-        camera_path = 'static/camera_off.png'  
-        screen_path = 'static/screen_off.png'
+        camera_path = "static/camera_off.png"
+        screen_path = "static/screen_off.png"
         frame = cv2.imread(camera_path, cv2.IMREAD_UNCHANGED)
         _, buffer = cv2.imencode(".jpg", frame)
         frame_base64 = base64.b64encode(buffer).decode("utf-8")
@@ -152,7 +157,9 @@ class ConferenceClient:
         """
         try:
             data = {"username": self.username, "client_ip": self.client_ip}
-            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}", json=data)
+            response = requests.post(
+                f"{self.server_addr}/join_conference/{conference_id}", json=data
+            )
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
@@ -173,7 +180,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/quit_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/quit_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Quit conference")
@@ -191,7 +200,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/cancel_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/cancel_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Cancelled conference")
@@ -234,7 +245,7 @@ class ConferenceClient:
         control_message = struct.pack(">I", control_message)
         control_message += struct.pack(">d", time_stamp)
         self.sock_control.send(control_message)
-                    
+
     def recv_control(self):
         print("[INFO] Starting control receiving...")
         try:
@@ -252,7 +263,7 @@ class ConferenceClient:
                 else:
                     pass
         except Exception as e:
-            print(f"[Error] Failed to receive control message: {str(e)}")    
+            print(f"[Error] Failed to receive control message: {str(e)}")
 
 
     def send_object(self, object, connection):
@@ -336,7 +347,7 @@ class ConferenceClient:
                     self.current_screen_frame = frame_base64
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
-    
+
     def send_camera(self):
         print("[INFO] Starting camera streaming...")
         try:
@@ -355,7 +366,6 @@ class ConferenceClient:
                     self.camera_sleep_time = 0
         except Exception as e:
             print(f"[Error] Failed to send camera data: {str(e)}")
-            
 
     def recv_camera(self):
         print("[INFO] Starting camera receiving...")
@@ -384,7 +394,6 @@ class ConferenceClient:
 
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
-
 
     def audio_sender(self):
         print("[INFO] Starting audio streaming...")
@@ -432,7 +441,7 @@ class ConferenceClient:
 
             except Exception as e:
                 print(f"Error receiving audio: {e}")
-            
+
     def audio_mixer(self):
         while self.on_meeting:
             mixed_audio_array = None
@@ -443,7 +452,7 @@ class ConferenceClient:
                     # 获取音频数据
                     recv_audio = user_queue.get(block=False)
                     user_audio_array = np.frombuffer(recv_audio, dtype=np.int16)
-                    # self.output_stream.write(user_audio_array.tobytes()) 
+                    # self.output_stream.write(user_audio_array.tobytes())
                 except queue.Empty:
                     # 填充静音
                     user_audio_array = np.zeros(CHUNK, dtype=np.int16)
@@ -459,13 +468,13 @@ class ConferenceClient:
                 mixed_audio_array = np.zeros(CHUNK, dtype=np.int16)
             else:
                 # 剪裁混音数据
-                mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(np.int16)
+                mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(
+                    np.int16
+                )
 
-            
             if self.speaker_on:
                 self.output_stream.write(mixed_audio_array.tobytes())
 
-                
             # to flask web
 
             # try:
@@ -479,8 +488,7 @@ class ConferenceClient:
             #     pass
 
             # finally:
-            #     time.sleep(CHUNK / RATE)       
-
+            #     time.sleep(CHUNK / RATE)
 
     def start_conference(self):
         """
@@ -495,10 +503,10 @@ class ConferenceClient:
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
             self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
-            
+
             # Start control receiving thread
             threading.Thread(target=self.recv_control).start()
-            
+
             # Start info thread
             threading.Thread(target=self.recv_info).start()
             # Start message receiving thread
@@ -562,7 +570,9 @@ class ConferenceClient:
                 self.username = data["username"]
                 return jsonify({"status": "success"})
             else:  # GET request
-                return jsonify({"username": self.username, "conference-id": self.conference_id})
+                return jsonify(
+                    {"username": self.username, "conference-id": self.conference_id}
+                )
 
         @self.app.route("/api/update_client_info")
         def update_client_info():
@@ -648,16 +658,16 @@ class ConferenceClient:
         @self.app.route("/api/audio_feed")
         def audio_feed():
             def generate_audio():
-                
+
                 pass
-                
+
                 # send wav header
                 # yield generate_wav_header(
                 #     sample_rate=RATE,
                 #     bits_per_sample=BYTES_PER_SAMPLE * 8,
                 #     channels=CHANNELS
                 # )
-                
+
                 # while self.on_meeting and self.speaker_on:
                 #     print(self.mixed_audio.qsize())
                 #     try:
@@ -668,7 +678,7 @@ class ConferenceClient:
                 #     yield mixed_audio
 
             return Response(generate_audio(), mimetype="audio/wav")
-            
+
         @self.app.route("/api/video_feed/<stream_type>")
         def video_feed(stream_type):
 
@@ -716,7 +726,11 @@ class ConferenceClient:
                 status = f"OnMeeting-{self.conference_id}"
 
             recognized = True
-            cmd_input = input(f'({status}) Please enter a operation (enter "?" to help): ').strip().lower()
+            cmd_input = (
+                input(f'({status}) Please enter a operation (enter "?" to help): ')
+                .strip()
+                .lower()
+            )
             fields = cmd_input.split(maxsplit=1)
             if len(fields) == 1:
                 if cmd_input in ("?", "？"):
@@ -783,7 +797,9 @@ if __name__ == "__main__":
         default=9000,
         help="Port to run the frontend on (default: 9000)",
     )
-    parser.add_argument("-r", "--remote", type=bool, default=False, help="It's remote client")
+    parser.add_argument(
+        "-r", "--remote", type=bool, default=False, help="It's remote client"
+    )
     args = parser.parse_args()
 
     FRONT_PORT = args.port

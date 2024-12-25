@@ -175,7 +175,9 @@ class ConferenceServer:
         """
         Boardcast client info to all clients.
         """
-        print(f"[INFO] Broadcasting client info to {len(self.client_tcps_info)} clients")
+        print(
+            f"[INFO] Broadcasting client info to {len(self.client_tcps_info)} clients"
+        )
         for client_conn in self.client_tcps_info.values():
             try:
                 print(f"[INFO] Sending to client: {client_conn.getpeername()}")
@@ -257,7 +259,9 @@ class ConferenceServer:
 
         # control
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
+        print(
+            f"Control server started at {self.server_ip}:{self.data_ports['control']}"
+        )
         self.sock_control.bind((self.server_ip, self.data_ports["control"]))
         self.sock_control.listen(5)
 
@@ -328,16 +332,18 @@ class ConferenceServer:
 
         # Start accept threads for each socket
         accept_threads = [
-            ('info', self.sock_info),
-            ('control', self.sock_control),
-            ('msg', self.sock_msg),
-            ('audio', self.sock_audio),
-            ('camera', self.sock_camera),
-            ('screen', self.sock_screen),
+            ("info", self.sock_info),
+            ("control", self.sock_control),
+            ("msg", self.sock_msg),
+            ("audio", self.sock_audio),
+            ("camera", self.sock_camera),
+            ("screen", self.sock_screen),
         ]
 
         for sock_type, sock in accept_threads:
-            threading.Thread(target=self.accept_connections, args=(sock, sock_type), daemon=True).start()
+            threading.Thread(
+                target=self.accept_connections, args=(sock, sock_type), daemon=True
+            ).start()
 
         # Keep main thread alive
         while self.running:
@@ -375,7 +381,9 @@ class MainServer:
             """
             client_ip = request.remote_addr
             conf_id = self.generate_conference_id()
-            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip)
+            self.conference_servers[conf_id] = ConferenceServer(
+                conf_id, self.conf_ports, client_ip, self.server_ip
+            )
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             print(f"[INFO] Created conference {conf_id} for {client_ip}")
             return jsonify(
@@ -395,7 +403,8 @@ class MainServer:
             :return: Dictionary with the result (success or error).
             """
             data = request.get_json()
-            client_ip, client_username = data["client_ip"], data["username"]
+            client_username = data["username"]
+            client_ip = request.remote_addr
 
             if conference_id not in self.conference_servers:
                 return (
@@ -473,5 +482,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_PUBLIC_WYT, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS) 
     server.start()
