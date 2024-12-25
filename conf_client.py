@@ -18,14 +18,13 @@ import time
 import uuid
 
 
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_HLC
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
 SERVER_AUDIO_PORT = 8891
 SERVER_SCREEN_PORT = 8892
 SERVER_CAMERA_PORT = 8893
-SERVER_COMMAND_PORT = 9001
 
 FRONT_PORT = 9000
 
@@ -61,6 +60,7 @@ class ConferenceClient:
 
         ### Audio Streaming ###
         self.audio = pyaudio.PyAudio()
+        self.server_audio_port = SERVER_AUDIO_PORT
         self.client_audio_port = 8989
         self.microphone_on = True
         self.speaker_on = True
@@ -100,13 +100,10 @@ class ConferenceClient:
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
         # connect to frontend
         self.app = Flask(__name__)
         self.setup_routes()
 
-        self.send_data = False
     def create_conference(self):
         """
         create a conference: send create-conference request to server and obtain necessary data to
@@ -129,29 +126,11 @@ class ConferenceClient:
         """
         try:
             response = requests.post(f"{self.server_addr}/join_conference/{conference_id}")
-            # print(f"response: {response}")
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
-                data = response.json()
-                print(data["client_ip"])
-                # print("----------------------------------------------")
-                if (data["mode"] == "Client-Server"):
-                    self.server_ip = SERVER_IP
-                elif (data["mode"] == "P2P"):
-                    self.server_ip = data["client_ip"]
-                    print(f"[INFO] P2P mode, server ip: {self.server_ip}")
-                else :
-                    self.server_ip = SERVER_IP
                 print(f"[Success] Joined conference {conference_id}")
-                if self.server_ip :
-                    # print("----------------------------------------------")
-                    # print(f"server ip: {self.server_ip}")
-                    # print("----------------------------------------------")
-                    self.start_conference()
-                else:
-                    self.start_conference_one()
-                # self.start_conference()
+                self.start_conference()
             else:
                 print("[Error] Failed to join conference")
         except Exception as e:
@@ -242,24 +221,25 @@ class ConferenceClient:
                 print("[Warn] Not in a conference")
                 return
             while self.on_meeting:
-                if self.is_screen_streaming:
-                    with mss.mss() as sct:
-                        monitor = sct.monitors[1]
-                        img = sct.grab(monitor)
-                        img_np = np.array(img)
-                        img_np = cv2.resize(img_np, (1280, 720))
-                        _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
-                        img_bytes = img_encode.tobytes()
-                        img_length = len(img_bytes)
-                        header = struct.pack(">I", img_length)
-                        time_stamp = time.time()
-                        header += struct.pack(">d", time_stamp)
-                        self.sock_screen.send(header)
-                        self.sock_screen.send(img_bytes)
-                        time.sleep(self.screen_sleep_time)
-                        self.screen_sleep_time -= SCREEN_SLEEP_DECREASE
-                        if self.screen_sleep_time < 0:
-                            self.screen_sleep_time = 0
+                with mss.mss() as sct:
+                    monitor = sct.monitors[1]
+                    img = sct.grab(monitor)
+                    img_np = np.array(img)
+                    img_np = cv2.resize(img_np, (640, 480))
+                    _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
+                    img_bytes = img_encode.tobytes()
+                    img_length = len(img_bytes)
+                    print(f"screen frame length: {img_length}")
+                    header = struct.pack(">I", img_length)
+                    time_stamp = time.time()
+                    header += struct.pack(">d", time_stamp)
+                    self.sock_screen.send(header)
+                    self.sock_screen.send(img_bytes)
+                    # time.sleep(1)
+                    time.sleep(self.screen_sleep_time)
+                    self.screen_sleep_time -= SCREEN_SLEEP_DECREASE
+                    if self.screen_sleep_time < 0:
+                        self.screen_sleep_time = 0
         except Exception as e:
             print(f"[Error] Failed to send screen data: {str(e)}")
     
@@ -315,16 +295,22 @@ class ConferenceClient:
                 return
             cap = initialize_camera()
             while self.on_meeting:
-                if self.is_camera_streaming:
-                    ret, frame = cap.read()
-                    if not ret:
-                        print(f"帧捕获失败。")
-                        break
-                    _, frame_encode = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
-                    frame_length = len(frame_encode)
-                    header = struct.pack(">I", frame_length)
-                    self.sock_camera.send(header)
-                    self.sock_camera.send(frame_encode)
+                ret, frame = cap.read()
+                if not ret:
+                    print(f"帧捕获失败。")
+                    break
+                _, frame_encode = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
+                frame_length = len(frame_encode)
+                # print(f"camera frame length: {frame_length}")
+                header = struct.pack(">I", frame_length)
+                time_stamp = time.time()
+                header += struct.pack(">d", time_stamp)
+                self.sock_camera.send(header)
+                self.sock_camera.send(frame_encode)
+                time.sleep(self.camera_sleep_time)
+                self.camera_sleep_time -= CAMERA_SLEEP_DECREASE
+                if self.camera_sleep_time < 0:
+                    self.camera_sleep_time = 0
         except Exception as e:
             print(f"[Error] Failed to send camera data: {str(e)}")
             
@@ -376,108 +362,119 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
 
-    def start_audio(self):
-        try:
-            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind((self.client_ip, self.client_audio_port))
-            udp_socket.setblocking(False)  # 设置非阻塞模式
 
-            input_stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                input=True,
-            )
-            output_stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                output=True,
-            )
+    def audio_sender(self):
+        
+        input_stream = self.audio.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            frames_per_buffer=CHUNK,
+            input=True,
+        )
 
-            while self.on_meeting:
-                if self.microphone_on:
-                    sent_audio = input_stream.read(CHUNK)
-                    udp_socket.sendto(sent_audio, (self.server_ip, self.server_audio_port))
-
+        while self.on_meeting:
+            sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
+            
+            timestamp = time.time()
+            packet = struct.pack(f"!d16s", timestamp, self.unique_id) + sent_audio
+            
+            header = struct.pack("!I", len(packet))
+            if self.microphone_on:
                 try:
-                    recv_audio, _ = udp_socket.recvfrom(65535)
-                    # output_stream.write(recv_audio)
-                    print(recv_audio)  # test
-                except BlockingIOError:
-                    pass
+                    self.sock_audio.send(header + packet)
+                except Exception as e:
+                    print(f"Error sending audio: {e}")
+                    break
 
-        except Exception as e:
-            print(f"[Error] Audio streaming failed: {str(e)}")
+    def audio_receiver(self):
 
-        finally:
-            input_stream.stop_stream()
-            input_stream.close()
-            output_stream.stop_stream()
-            output_stream.close()
-            udp_socket.close()
-            print("[Audio] Stopped audio transmission and reception.")
+        while self.on_meeting:
+            
+            header = self.sock_audio.recv(4)
+            if len(header) < 4:
+                continue
+            
+            packet_length = struct.unpack("!I", header)[0]
 
-            print("[Audio] Stopped audio capture and transmission.")
-        pass
+            # 读取完整的数据包
+            packet = self.sock_audio.recv(packet_length)
+            while len(packet) < packet_length:
+                packet += self.sock_audio.recv(packet_length - len(packet))
+            
+            # 解包数据
+            timestamp, unique_id = struct.unpack("!d16s", packet[:24])
+            audio_data = packet[24:]
 
-    def recv_aud(self):
-        """
-        Receive audio data
-        """
-        try:
-            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_socket.bind((self.client_ip, self.audio_port))
+            # print(f"Received audio from client: {unique_id.hex()}, time: {timestamp}, data: {audio_data[:10]}")
+ 
+            current_time = time.time()
+            delay = current_time - timestamp
+            if delay > 0.5:  # 丢弃延迟超过 500ms 的音频
+                continue
+            
+            # 将音频数据加入队列
+            if unique_id not in self.audio_buffers:
+                self.audio_buffers[unique_id] = queue.Queue(maxsize=10)
 
-            # Open audio output stream
-            stream = self.audio.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                frames_per_buffer=CHUNK,
-                output=True,
-            )
+            user_queue = self.audio_buffers[unique_id]
+            try:
+                user_queue.put(audio_data, block=False)
+            except queue.Full:
+                user_queue.get()
+                user_queue.put(audio_data)
 
-            print("[Audio] Starting audio reception and playback...")
-            while self.on_meeting:
-                # Receive audio data from the server
-                audio_data, _ = udp_socket.recvfrom(CHUNK)
-                stream.write(audio_data)
+            except Exception as e:
+                print(f"Error receiving audio: {e}")
+            
+    def audio_mixer(self):
+        while self.on_meeting:
+            mixed_audio_array = None
 
-        except Exception as e:
-            print(f"[Error] Audio reception failed: {str(e)}")
+            # 遍历用户音频队列
+            for ip, user_queue in list(self.audio_buffers.items()):
+                try:
+                    # 获取音频数据
+                    recv_audio = user_queue.get(block=False)
+                    user_audio_array = np.frombuffer(recv_audio, dtype=np.int16)
+                    # self.output_stream.write(user_audio_array.tobytes()) 
+                except queue.Empty:
+                    # 填充静音
+                    user_audio_array = np.zeros(CHUNK, dtype=np.int16)
 
-        finally:
-            stream.stop_stream()
-            stream.close()
-            udp_socket.close()
-            print("[Audio] Stopped audio reception and playback.")
+                if mixed_audio_array is None:
+                    mixed_audio_array = np.zeros_like(user_audio_array, dtype=np.int32)
 
-    def keep_share(self, data_type, send_conn, capture_function, compress=None, fps_or_frequency=30):
-        """
-        running task: keep sharing (capture and send) certain type of data from server or clients (P2P)
-        you can create different functions for sharing various kinds of data
-        """
-        pass
+                # 混音叠加
+                mixed_audio_array += user_audio_array
 
-    def share_switch(self, data_type):
-        """
-        switch for sharing certain type of data (screen, camera, audio, etc.)
-        """
-        pass
+            # 如果没有任何音频数据，填充静音
+            if mixed_audio_array is None:
+                mixed_audio_array = np.zeros(CHUNK, dtype=np.int16)
+            else:
+                # 剪裁混音数据
+                mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(np.int16)
 
-    def keep_recv(self, recv_conn, data_type, decompress=None):
-        """
-        running task: keep receiving certain type of data (save or output)
-        you can create other functions for receiving various kinds of data
-        """
+            
+            if self.speaker_on:
+                self.output_stream.write(mixed_audio_array.tobytes())
 
-    def output_data(self):
-        """
-        running task: output received stream data
-        """
+                
+            # to flask web
+
+            # try:
+            #     # print(self.mixed_audio.qsize())
+            #     self.mixed_audio.put_nowait(mixed_audio_array.tobytes())
+
+            # except queue.Full:
+            #     # print('shit')
+            #     # self.mixed_audio.get()
+            #     # self.mixed_audio.put(mixed_audio_array.tobytes())
+            #     pass
+
+            # finally:
+            #     time.sleep(CHUNK / RATE)       
+
 
     def start_conference(self):
         """
@@ -486,18 +483,27 @@ class ConferenceClient:
         start necessary running task for conference
         """
         try:
+            self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
+            self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
+            
+            # Start control receiving thread
+            threading.Thread(target=self.recv_control).start()
+            
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
             # Start camera and screen sending thread
             threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
-            # Start screen thread
-            threading.Thread(target=self.send_screen).start()
-            threading.Thread(target=self.recv_screen).start()
+
+            # Start audio thread
+            threading.Thread(target=self.audio_sender).start()
+            threading.Thread(target=self.audio_receiver).start()
+            threading.Thread(target=self.audio_mixer).start()
+
             # 自动开启视频流
             self.is_streaming = True
             # self.video_thread = threading.Thread(target=self.process_video)
@@ -511,21 +517,6 @@ class ConferenceClient:
             pass
             # Terminate PyAudio when the conference ends
             # self.audio.terminate()
-    def start_conference_one(self):
-        try:
-            self.send_data = False
-            threading.Thread(target=self.send_camera).start()
-            threading.Thread(target=self.send_screen).start()
-            # threading.Thread(target=self.send_audio).start()
-            # 自动开启视频流
-            self.is_streaming = True
-
-        except Exception as e:
-            print(f"[Error] Failed to start conference: {str(e)}")
-            self.on_meeting = False
-
-        finally:
-            pass
 
     def close_conference(self):
         """
@@ -658,10 +649,6 @@ class ConferenceClient:
             """获取视频流（camera或screen）"""
 
             def generate():
-                # print("-------------------------------------")
-                # print(f"is_streaming: {self.is_streaming}")
-                # print(f"on_meeting: {self.on_meeting}")
-                # print("-------------------------------------")
                 while self.is_streaming and self.on_meeting:
                     with self.frame_lock:
                         if self.current_frame:
@@ -693,33 +680,17 @@ class ConferenceClient:
                     self.video_thread.join()
 
             return jsonify({"status": "success"})
-    def get_command_server(self):
-        get_command_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        get_command_server.bind((self.client_ip, SERVER_COMMAND_PORT))
-        get_command_server.listen(5)
-        while True:
-            # print("eeeeeeeeeeeeeeeeeeeeeeeeeee")
-            print("Waiting for connection...")
-            conn, addr = get_command_server.accept()
-            print(f"Connected by {addr}")
-            data = conn.recv(1024)
-            if not data:
-                break
-            print(f"Received data: {data}")
-        get_command_server.close()
-
 
     def start(self, remote=False):
         """
         execute functions based on the command line input
         """
         self.app.run(
-            host="localhost" if not remote else SERVER_IP_PUBLIC_TJL,
+            host="localhost" if not remote else SERVER_IP,
             port=FRONT_PORT,
             debug=False,
             threaded=True,
         )
-        # self.get_command_server()
         while True:
             if not self.on_meeting:
                 status = "Free"
@@ -799,6 +770,4 @@ if __name__ == "__main__":
 
     FRONT_PORT = args.port
     client1 = ConferenceClient()
-    # client1.get_command_server()
-    threading.Thread(target=client1.get_command_server).start()
     client1.start(remote=args.remote)
