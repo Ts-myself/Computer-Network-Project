@@ -258,6 +258,12 @@ class ConferenceServer:
                         target=self.handle_data,
                         args=(client_conn, self.client_tcps_msg, "msg"),
                     ).start()
+                elif sock_type == "audio":
+                    self.client_tcps_audio[client_addr] = client_conn
+                    threading.Thread(
+                        target=self.handle_data,
+                        args=(client_conn, self.client_tcps_audio, "audio"),
+                    ).start()
                 elif sock_type == "camera":
                     self.client_tcps_camera[client_addr] = client_conn
                     threading.Thread(
@@ -346,7 +352,7 @@ class ConferenceServer:
         #         args=(client_conn, self.client_tcps_screen, "screen"),
         #     ).start()
 
-        #     # Accept new UDP client for audio handling
+        #     # Accept new TCP client for audio handling
         #     client_conn, client_addr = self.sock_audio.accept()
         #     self.client_tcps_audio[client_addr] = client_conn
         #     threading.Thread(
@@ -356,11 +362,12 @@ class ConferenceServer:
 
         # Start accept threads for each socket
         accept_threads = [
-            ("info", self.sock_info),
-            ("control", self.sock_control),
-            ("msg", self.sock_msg),
-            ("camera", self.sock_camera),
-            ("screen", self.sock_screen),
+            ('info', self.sock_info),
+            ('control', self.sock_control),
+            ('msg', self.sock_msg),
+            ('audio', self.sock_audio),
+            ('camera', self.sock_camera),
+            ('screen', self.sock_screen),
         ]
 
         for sock_type, sock in accept_threads:

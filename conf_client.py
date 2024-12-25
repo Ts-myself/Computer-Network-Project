@@ -107,9 +107,9 @@ class ConferenceClient:
 
         # camera and screen
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.is_camera_streaming = False
+        self.is_camera_streaming = True
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.is_screen_streaming = False
+        self.is_screen_streaming = True
 
         # connect to frontend
         self.app = Flask(__name__)
@@ -267,7 +267,7 @@ class ConferenceClient:
                     _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
                     img_bytes = img_encode.tobytes()
                     img_length = len(img_bytes)
-                    print(f"screen frame length: {img_length}")
+                    # print(f"screen frame length: {img_length}")
                     header = struct.pack(">I", img_length)
                     time_stamp = time.time()
                     header += struct.pack(">d", time_stamp)
