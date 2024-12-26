@@ -399,7 +399,7 @@
                     const screenElement = document.getElementById(`screen${participant.client_ip}`);
 
                     if (cameraElement) {
-                        if (data.camera && data.camera.client_ip === participant.client_ip && data.camera.frame) {
+                        if (data.camera && (data.camera.client_ip === participant.client_ip || true) && data.camera.frame) {
                             cameraElement.src = `data:image/jpeg;base64,${data.camera.frame}`;
                         } else {
                             cameraElement.src = '/static/camera_off.png';
@@ -407,7 +407,7 @@
                     }
 
                     if (screenElement) {
-                        if (data.screen && data.screen.client_ip === participant.client_ip && data.screen.frame) {
+                        if (data.screen && (data.screen.client_ip === participant.client_ip || true) && data.screen.frame) {
                             screenElement.src = `data:image/jpeg;base64,${data.screen.frame}`;
                         } else {
                             screenElement.src = '/static/screen_off.png';

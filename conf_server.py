@@ -87,8 +87,8 @@ class ConferenceServer:
                     audio_data = self.receive_object(reader, audio_length)
                     print(f"Received audio data: {len(audio_data)} bytes")
                     for client_conn in self.client_tcps_audio.values():
-                        if client_conn == reader:  # debug only
-                            # if client_conn != reader:  # Don't send back to the sender
+                        # if client_conn == reader:  # debug only
+                        if client_conn != reader:  # Don't send back to the sender
                             client_conn.send(header)
                             client_conn.send(audio_data)
                             print(

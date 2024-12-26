@@ -57,7 +57,9 @@ class ConferenceClient:
 
         self.username = "User"
         self.on_meeting = False  # status
-        self.conns = None  # you may need to maintain multiple conns for a single conference
+        self.conns = (
+            None  # you may need to maintain multiple conns for a single conference
+        )
         self.support_data_types = []  # for some types of data
         self.share_data = {}
         self.conference_id = None
@@ -163,8 +165,14 @@ class ConferenceClient:
         join a conference: send join-conference request with given conference_id, and obtain necessary data to
         """
         try:
-            data = {"username": self.username, "client_ip": self.client_ip}
-            response = requests.post(f"{self.server_addr}/join_conference/{conference_id}", json=data)
+            data = {
+                "username": self.username,
+                "client_ip": self.client_ip,
+                "id": str(self.unique_id),
+            }
+            response = requests.post(
+                f"{self.server_addr}/join_conference/{conference_id}", json=data
+            )
             if response.status_code == 200:
                 self.conference_id = conference_id
                 self.on_meeting = True
@@ -185,7 +193,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/quit_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/quit_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Quit conference")
@@ -203,7 +213,9 @@ class ConferenceClient:
             return
 
         try:
-            response = requests.post(f"{self.server_addr}/cancel_conference/{self.conference_id}")
+            response = requests.post(
+                f"{self.server_addr}/cancel_conference/{self.conference_id}"
+            )
             if response.status_code == 200:
                 self.close_conference()
                 print("[Success] Cancelled conference")
@@ -314,9 +326,10 @@ class ConferenceClient:
                     img = sct.grab(monitor)
                     img_np = np.array(img)
                     img_np = cv2.resize(img_np, (640, 480))
-                    _, img_encode = cv2.imencode(".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
+                    _, img_encode = cv2.imencode(
+                        ".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
+                    )
                     self.send_object(img_encode.tobytes(), self.sock_screen)
-                    time.sleep(1 / 2)
                     time.sleep(self.screen_sleep_time)
                     self.screen_sleep_time -= SCREEN_SLEEP_DECREASE
                     if self.screen_sleep_time < 0:
@@ -332,19 +345,24 @@ class ConferenceClient:
                 print("Successfully receive screen header")
                 if not header:
                     break
-                screen_length, screen_time, screen_id, screen_ip = self.unpack_object(header)
-
-                # screen_id = screen_id.decode("utf-8")
-                # screen_ip = ipaddress.ip_address(screen_ip).exploded
+                screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
+                    header
+                )
 
                 now_time = time.time()
                 time_gap = now_time - screen_time
-                if time_gap > SCREEN_TIME_MAX_GAP and now_time - self.last_control_screen_time > 1:
+                if (
+                    time_gap > SCREEN_TIME_MAX_GAP
+                    and now_time - self.last_control_screen_time > 1
+                ):
                     # 1 slow screen send
                     self.send_control(1, now_time)
                 screen_data = self.receive_object(self.sock_screen, screen_length)
                 print("Successfully receive screen data")
-                frame = cv2.imdecode(np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR)
+                print(f"len(screen_data): {len(screen_data)}")
+                frame = cv2.imdecode(
+                    np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR
+                )
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 if self.is_screen_streaming:
@@ -364,9 +382,10 @@ class ConferenceClient:
             cap = initialize_camera()
             while self.on_meeting:
                 ret, frame = cap.read()
-                _, frame_encode = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30])
+                _, frame_encode = cv2.imencode(
+                    ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
+                )
                 self.send_object(frame_encode.tobytes(), self.sock_camera)
-                time.sleep(1 / 5)
                 time.sleep(self.camera_sleep_time)
                 self.camera_sleep_time -= CAMERA_SLEEP_DECREASE
                 if self.camera_sleep_time < 0:
@@ -382,16 +401,24 @@ class ConferenceClient:
                 print("Successfully receive camera header")
                 if not header:
                     break
-                camera_length, camera_time, camera_id, camera_ip = self.unpack_object(header)
+                camera_length, camera_time, camera_id, camera_ip = self.unpack_object(
+                    header
+                )
 
                 now_time = time.time()
                 time_gap = now_time - camera_time
-                if time_gap > CAMERA_TIME_MAX_GAP and now_time - self.last_control_camera_time > 1:
+                if (
+                    time_gap > CAMERA_TIME_MAX_GAP
+                    and now_time - self.last_control_camera_time > 1
+                ):
                     # 2 slow camera send
                     self.send_control(2, now_time)
                 camera_data = self.receive_object(self.sock_camera, camera_length)
                 print("Successfully receive camera data")
-                frame = cv2.imdecode(np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR)
+                print(f"len(camera_data): {len(camera_data)}")
+                frame = cv2.imdecode(
+                    np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR
+                )
                 _, buffer = cv2.imencode(".jpg", frame)
                 # show
                 # cv2.imshow('frame', frame)
@@ -478,7 +505,9 @@ class ConferenceClient:
                 mixed_audio_array = np.zeros(CHUNK, dtype=np.int16)
             else:
                 # 剪裁混音数据
-                mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(np.int16)
+                mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(
+                    np.int16
+                )
 
             if self.speaker_on:
                 self.output_stream.write(mixed_audio_array.tobytes())
@@ -525,13 +554,13 @@ class ConferenceClient:
             # Strat camera thread
             threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
-            # threading.Thread(target=self.send_screen).start()
-            # threading.Thread(target=self.recv_screen).start()
+            threading.Thread(target=self.send_screen).start()
+            threading.Thread(target=self.recv_screen).start()
 
             # Start audio thread
-            # threading.Thread(target=self.audio_sender).start()
-            # threading.Thread(target=self.audio_receiver).start()
-            # threading.Thread(target=self.audio_mixer).start()
+            threading.Thread(target=self.audio_sender).start()
+            threading.Thread(target=self.audio_receiver).start()
+            threading.Thread(target=self.audio_mixer).start()
 
             # 自动开启视频流
             self.is_streaming = True
@@ -578,7 +607,9 @@ class ConferenceClient:
                 self.username = data["username"]
                 return jsonify({"status": "success"})
             else:  # GET request
-                return jsonify({"username": self.username, "conference-id": self.conference_id})
+                return jsonify(
+                    {"username": self.username, "conference-id": self.conference_id}
+                )
 
         @self.app.route("/api/update_client_info")
         def update_client_info():
@@ -586,6 +617,7 @@ class ConferenceClient:
                 while True:
                     infos = {
                         "client_ip": self.client_ip,
+                        "id": str(self.unique_id),
                         "username": self.username,
                         "on_meeting": self.on_meeting,
                         "conference_id": self.conference_id,
@@ -651,6 +683,7 @@ class ConferenceClient:
                 msg_json = {
                     "msg": msg,
                     "ip": self.client_ip,
+                    "id": str(self.unique_id),
                     "username": self.username,
                     "timestamp": getCurrentTime(),
                 }
@@ -689,18 +722,28 @@ class ConferenceClient:
         def video_streams():
             def generate():
                 while self.on_meeting:
-                    camera_id = self.current_camera_data["id"].decode("utf-8")
-                    camera_ip = ipaddress.ip_address(self.current_camera_data["client_ip"]).exploded
-                    screen_id = self.current_screen_data["id"].decode("utf-8")
-                    screen_ip = ipaddress.ip_address(self.current_screen_data["client_ip"]).exploded
+                    camera_id = uuid.UUID(bytes=self.current_camera_data["id"])
+                    camera_id = str(camera_id)
+                    camera_ip = socket.inet_ntoa(self.current_camera_data["client_ip"])
+                    screen_id = uuid.UUID(bytes=self.current_screen_data["id"])
+                    screen_id = str(screen_id)
+                    screen_ip = socket.inet_ntoa(self.current_screen_data["client_ip"])
                     streams_data = {
                         "camera": {
-                            "frame": (self.current_camera_frame if self.is_camera_streaming else None),
+                            "frame": (
+                                self.current_camera_frame
+                                if self.is_camera_streaming
+                                else None
+                            ),
                             "client_ip": camera_ip,
                             "id": camera_id,
                         },
                         "screen": {
-                            "frame": (self.current_screen_frame if self.is_screen_streaming else None),
+                            "frame": (
+                                self.current_screen_frame
+                                if self.is_screen_streaming
+                                else None
+                            ),
                             "client_ip": screen_ip,
                             "id": screen_id,
                         },
@@ -727,7 +770,11 @@ class ConferenceClient:
                 status = f"OnMeeting-{self.conference_id}"
 
             recognized = True
-            cmd_input = input(f'({status}) Please enter a operation (enter "?" to help): ').strip().lower()
+            cmd_input = (
+                input(f'({status}) Please enter a operation (enter "?" to help): ')
+                .strip()
+                .lower()
+            )
             fields = cmd_input.split(maxsplit=1)
             if len(fields) == 1:
                 if cmd_input in ("?", "？"):
@@ -794,7 +841,9 @@ if __name__ == "__main__":
         default=9000,
         help="Port to run the frontend on (default: 9000)",
     )
-    parser.add_argument("-r", "--remote", type=bool, default=False, help="It's remote client")
+    parser.add_argument(
+        "-r", "--remote", type=bool, default=False, help="It's remote client"
+    )
     args = parser.parse_args()
 
     FRONT_PORT = args.port
