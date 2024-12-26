@@ -24,8 +24,7 @@ import queue
 import struct
 import time
 import uuid
-import netifaces as ni
-# from flask_socketio import SocketIO
+import netifaces as n
 
 
 SERVER_INFO_PORT = 8887
@@ -562,31 +561,7 @@ class ConferenceClient:
             if self.speaker_on:
                 self.output_stream.write(mixed_audio_array.tobytes())
 
-            # to flask web
-
-            # try:
-            #     # print(self.mixed_audio.qsize())
-            #     self.mixed_audio.put_nowait(mixed_audio_array.tobytes())
-
-            # except queue.Full:
-            #     # print('shit')
-            #     # self.mixed_audio.get()
-            #     # self.mixed_audio.put(mixed_audio_array.tobytes())
-            #     pass
-
-            # finally:
-            #     time.sleep(CHUNK / RATE)
-
     def create_conference_conn(self):
-        # ip_addresses = get_all_ip_addresses()
-        # if (len(ip_addresses) == 0):
-        #     print("No IP address found.")
-        #     return
-        # if (len(ip_addresses) == 1):
-        #     host = list(ip_addresses.values())[0]
-        # else :
-        #     print("Multiple IP addresses found!!!!")
-        #     return
         host = self.client_ip
         print(f"{host}")
 
@@ -635,6 +610,7 @@ class ConferenceClient:
 
         self.is_streaming = True
     def p2p_quit(self):
+        self.on_meeting = False
         self.sock_control.close()
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg.close()
@@ -645,16 +621,11 @@ class ConferenceClient:
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_audio.close()
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.on_meeting = True
 
-        ip_addresses = get_all_ip_addresses()
-        if (len(ip_addresses) == 0):
-            print("No IP address found.")
-            return
-        if (len(ip_addresses) == 1):
-            host = list(ip_addresses.values())[0]
-        else :
-            print("Multiple IP addresses found!!!!")
-            return
+        threading.Thread(target=self.recv_info).start()
+
+        host = self.client_ip
         print(f"{host}")
 
         self.sock_control.bind((host, SERVER_CONTROL_PORT))
@@ -694,6 +665,7 @@ class ConferenceClient:
         self.is_streaming = True
 
     def reconnect(self):
+        self.on_meeting = False
         self.sock_control.close()
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg.close()
@@ -704,6 +676,7 @@ class ConferenceClient:
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_audio.close()
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.on_meeting = True
         print("try to connect-------------------------------------------")
         try:
             self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
@@ -715,6 +688,7 @@ class ConferenceClient:
             threading.Thread(target=self.recv_msg).start()
             threading.Thread(target=self.recv_camera).start()
             threading.Thread(target=self.recv_screen).start()
+            threading.Thread(target=self.recv_info).start()
             # threading.Thread(target=self.audio_receiver).start()
             # threading.Thread(target=self.audio_mixer).start()
         except Exception as e:
@@ -950,43 +924,7 @@ class ConferenceClient:
                             "msg": 'no'
                         }
                         
-                    # time.sleep(1 / 30)
-
             return Response(generate(), mimetype="text/event-stream")
-
-        # @self.app.route("/api/toggle_video", methods=["POST"])
-        # def toggle_video():
-        #     """切换视频流的开启/关闭状态"""
-        #     data = request.json
-        #     action = data.get("action")
-
-        #     if action == "start" and not self.is_streaming:
-        #         self.is_streaming = True
-        #         self.video_thread = threading.Thread(target=self.process_video)
-        #         self.video_thread.start()
-        #     elif action == "stop" and self.is_streaming:
-        #         self.is_streaming = False
-        #         if self.video_thread:
-        #             self.video_thread.join()
-
-        #     return jsonify({"status": "success"})
-        
-        # @self.socketio.on("p2p2cs")
-        # def handle_p2p2cs(data):
-        #     print(f"Received p2p2cs data: {data}")
-        #     #close all conns
-        #     self.sock_control.close()
-        #     self.sock_msg.close()
-        #     self.sock_camera.close()
-        #     self.sock_screen.close()
-        #     self.sock_audio.close()
-        #     #create new conns
-        #     self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     self.start_conference()
 
     def start(self, remote=False):
         """
@@ -998,12 +936,6 @@ class ConferenceClient:
             debug=False,
             threaded=True,
         )
-        # self.socketio.run(
-        #     self.app, 
-        #     host="localhost" if not remote else SERVER_IP,
-        #     port=FRONT_PORT, 
-        #     debug=False,
-        # )
         while True:
             if not self.on_meeting:
                 status = "Free"

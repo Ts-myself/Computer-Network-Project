@@ -171,12 +171,6 @@ class ConferenceServer:
         # except Exception as e:
         #     print(f"[ERROR] Error in logging task: {e}")
 
-    # 0 is zhengchang
-    # 1 p2p to cs
-    # 2 cs to p2p
-    # 3 p2p jianshao
-    # 4 cs normol
-    # 5 cs2p2p
     def boardcast_client_info(self,state = 0):
         """
         Boardcast client info to all clients.
