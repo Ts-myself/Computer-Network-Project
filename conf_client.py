@@ -27,7 +27,7 @@ import uuid
 import ipaddress
 
 
-SERVER_IP = SERVER_IP_PUBLIC_TJL
+SERVER_IP = SERVER_IP_LOCAL
 
 SERVER_INFO_PORT = 8887
 SERVER_PORT = 8888
@@ -205,19 +205,24 @@ class ConferenceClient:
             print(f"[Error] Failed to receive message: {str(e)}")
 
     def send_control(self, message, time_stamp):
-        self.last_control_screen_time = time_stamp
-        control_message = message
-        control_message = struct.pack(">I", control_message)
-        control_message += struct.pack(">d", time_stamp)
-        self.sock_control.send(control_message)
+        try:
+            self.last_control_screen_time = time_stamp
+            control_message = message
+            control_message = struct.pack(">I", control_message)
+            control_message += struct.pack(">d", time_stamp)
+            control_message += self.id
+            control_message += self.ip
+            self.sock_control.send(control_message)
+        except Exception as e:
+            print(f"[Error] Failed to send control message: {str(e)}")
 
     def recv_control(self):
         print("[INFO] Starting control receiving...")
         try:
             while self.on_meeting:
-                control_message = self.sock_control.recv(12)
-                message = struct.unpack(">I", control_message[:4])[0]
-                time_stamp = struct.unpack(">d", control_message[4:])[0]
+                # control_message = self.sock_control.recv(12)
+                control_message = self.receive_object(self.sock_control, 32)
+                message , time_stamp , id , ip = self.unpack_object(control_message)
                 print(f"Received control message: {message}")
                 if message == 1:
                     self.screen_sleep_time += SCREEN_SLEEP_INCREASE
@@ -364,6 +369,8 @@ class ConferenceClient:
                 ):
                     # 2 slow camera send
                     self.send_control(2, now_time)
+                    print("time gap: ", time_gap)
+                    print("now time -last control time: ", now_time - self.last_control_camera_time)
                 camera_data = self.receive_object(self.sock_camera, camera_length)
                 # print("Successfully receive camera data")
                 frame = cv2.imdecode(

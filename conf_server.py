@@ -141,26 +141,19 @@ class ConferenceServer:
         elif data_type == "control":
             try:
                 while self.running:
-                    data = reader.recv(12)
-                    if not data:
+                    header = self.receive_object(reader, HEADER_LENGTH)
+                    if not header:
                         break
-                    control_message = struct.unpack(">I", data[:4])[0]
-                    control_time = struct.unpack(">d", data[4:])[0]
+                    control_message, control_time , control_id, control_ip = (
+                        self.unpack_object(header)
+                    )
                     if control_message == 1:
-                        # print(f"Received control message: {control_message}")
-                        # print(f"Received control message time: {control_time}")
-                        # Forward the control message to all other clients
                         for client_conn in self.client_tcps_control.values():
-                            # if client_conn != reader:
-                            client_conn.send(data)
+                            client_conn.send(header)
                             # print(f"Successfully forwarded control message to {client_conn.getpeername()}")
                     elif control_message == 2:
-                        # print(f"Received control message: {control_message}")
-                        # print(f"Received control message tme: {control_time}")
-                        # Forward the control message to all other clients
                         for client_conn in self.client_tcps_control.values():
-                            # if client_conn != reader:
-                            client_conn.send(data)
+                            client_conn.send(header)
                             # print(f"Successfully forwarded control message to {client_conn.getpeername()}")
 
             except Exception as e:
@@ -486,5 +479,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
