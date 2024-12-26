@@ -242,28 +242,11 @@
             <button id="toggleScreen" aria-label="打开或关闭屏幕共享">打开/关闭屏幕</button>
             <button id="toggleMic" aria-label="打开或关闭麦克风">打开/关闭麦克风</button>
             <button id="toggleSpeaker" aria-label="打开或关闭扬声器">打开/关闭扬声器</button>
-            <!-- <audio id="audio" autoplay controls class="audio-element"></audio> -->
         </div>
         <div class="control-group">
-            <button id="switchMeeting" aria-label="切换到其他会议">切换会议</button>
             <button id="exitMeeting" aria-label="退出或关闭当前会议">退出/关闭会议</button>
         </div>
     </div>
-
-
-    <!-- <script>
-        const audioElement = document.getElementById('audio');
-
-        // 通过 JavaScript 尝试播放音频
-        audioElement.src = '/api/audio_feed';
-        audioElement.type = 'audio/wav';
-
-        audioElement.play().then(() => {
-            console.log("Audio started playing automatically.");
-        }).catch(error => {
-            console.error("Audio autoplay was prevented. User interaction required:", error);
-        });
-    </script> -->
 
     <script>
         // 在文件开头添加配置
@@ -272,6 +255,30 @@
         let participants = []; // 用于存储参与者列表
         let participant_num = 0;
         let recv_msgs = []; // 用于存储接收到的消息
+        let lastClientInfo = null; // 存储上一次的 client_info
+        const lastValidFrames = {
+            camera: {},
+            screen: {}
+        };
+        const time_threshold = 1000;
+
+        // 添加比较函数
+        function isClientInfoEqual(oldInfo, newInfo) {
+            if (!oldInfo || !newInfo) return false;
+
+            const oldKeys = Object.keys(oldInfo);
+            const newKeys = Object.keys(newInfo);
+
+            if (oldKeys.length !== newKeys.length) return false;
+
+            return oldKeys.every(key => {
+                const oldClient = oldInfo[key];
+                const newClient = newInfo[key];
+                return oldClient && newClient &&
+                    oldClient.username === newClient.username &&
+                    oldClient.join_time === newClient.join_time;
+            });
+        }
 
         function initUserInfo() {
             fetch('/api/client_info')
@@ -292,14 +299,19 @@
             const data = JSON.parse(event.data);
             // 将client_info对象转换为数组格式
             if (data.client_info && typeof data.client_info === 'object') {
-                participants = Object.entries(data.client_info).map(([client_ip, info]) => ({
-                    client_ip,
-                    username: info.username,
-                    join_time: info.join_time
-                }));
-                participant_num = data.participant_num;
-                document.getElementById('conference-id').textContent = data.conference_id;
-                updateVideoGrid();
+                // 检查 client_info 是否有变化
+                if (!isClientInfoEqual(lastClientInfo, data.client_info)) {
+                    participants = Object.entries(data.client_info).map(([client_id, info]) => ({
+                        client_id,
+                        username: info.username,
+                        join_time: info.join_time
+                    }));
+                    participant_num = data.participant_num;
+                    document.getElementById('conference-id').textContent = data.conference_id;
+                    updateVideoGrid();
+                    // 更新 lastClientInfo
+                    lastClientInfo = JSON.parse(JSON.stringify(data.client_info));
+                }
             } else {
                 console.error('Invalid client_info format:', data.client_info);
             }
@@ -346,7 +358,8 @@
                 // 创建屏幕共享视频元素
                 const screenVideo = document.createElement('img');
                 screenVideo.className = 'screen-display';
-                screenVideo.id = `screen${participant.client_ip}`;
+                screenVideo.id = `screen${participant.client_id}`;
+                screenVideo.src = '/static/screen_off.png';  // 设置默认图片
 
                 const cameraContainer = document.createElement('div');
                 cameraContainer.className = 'camera-container';
@@ -354,16 +367,13 @@
                 // 创建摄像头视频元素
                 const cameraVideo = document.createElement('img');
                 cameraVideo.className = 'user-camera';
-                cameraVideo.id = `camera${participant.client_ip}`;
+                cameraVideo.id = `camera${participant.client_id}`;
+                cameraVideo.src = '/static/camera_off.png';  // 设置��认图片
 
                 cameraContainer.appendChild(cameraVideo);
                 videoContainer.appendChild(screenVideo);
                 videoContainer.appendChild(cameraContainer);
                 videoGrid.appendChild(videoContainer);
-
-                // 设置视频流
-                setupVideoStream(screenVideo, participant.client_ip, 'screen');
-                setupVideoStream(cameraVideo, participant.client_ip, 'camera');
             });
 
             // 更新分页按钮状态
@@ -387,43 +397,80 @@
         });
 
 
-        // 换现有的simulateVideoStream函数
-        function setupVideoStream(videoElement, userIP, streamType) {
-            const eventSource = new EventSource(`/api/video_feed/${streamType}`);
-
-            // 设置默认图片
-            videoElement.onerror = function () {
-                videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
-            };
-
-            // 初始显示默认图片
-            videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+        // 替换现有的setupVideoStream函数
+        function setupVideoStreams() {
+            const eventSource = new EventSource('/api/video_streams');
 
             eventSource.onmessage = function (event) {
                 const data = JSON.parse(event.data);
+                const currentTime = Date.now();
 
-                // 检查这个视频流是否属于当前视频元素
-                const elementId = `${streamType}${userIP}`;
-                if (videoElement.id === elementId) {
-                    if (data.msg == "ok") {
-                        // 更新视频帧
-                        videoElement.src = `data:image/jpeg;base64,${data.frame}`;
-                    } else {
-                        // 如果没有帧数据，显示默认图片
-                        videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+                participants.forEach(participant => {
+                    const cameraElement = document.getElementById(`camera${participant.client_id}`);
+                    const screenElement = document.getElementById(`screen${participant.client_id}`);
+
+                    // Handle camera frames
+                    if (cameraElement) {
+                        if (data.camera && data.camera.id === participant.client_id && data.camera.frame) {
+                            // Update last valid frame and timestamp
+                            lastValidFrames.camera[participant.client_id] = {
+                                frame: data.camera.frame,
+                                timestamp: currentTime
+                            };
+                            cameraElement.src = `data:image/jpeg;base64,${data.camera.frame}`;
+                        } else {
+                            // Check if we have a valid recent frame
+                            const lastCamera = lastValidFrames.camera[participant.client_id];
+                            if (lastCamera && currentTime - lastCamera.timestamp < time_threshold) {
+                                cameraElement.src = `data:image/jpeg;base64,${lastCamera.frame}`;
+                            } else {
+                                cameraElement.src = '/static/camera_off.png';
+                            }
+                        }
                     }
-                }
+
+                    // Handle screen sharing frames
+                    if (screenElement) {
+                        if (data.screen && data.screen.id === participant.client_id && data.screen.frame) {
+                            // Update last valid frame and timestamp
+                            lastValidFrames.screen[participant.client_id] = {
+                                frame: data.screen.frame,
+                                timestamp: currentTime
+                            };
+                            screenElement.src = `data:image/jpeg;base64,${data.screen.frame}`;
+                        } else {
+                            // Check if we have a valid recent frame
+                            const lastScreen = lastValidFrames.screen[participant.client_id];
+                            if (lastScreen && currentTime - lastScreen.timestamp < time_threshold) {
+                                screenElement.src = `data:image/jpeg;base64,${lastScreen.frame}`;
+                            } else {
+                                screenElement.src = '/static/screen_off.png';
+                            }
+                        }
+                    }
+                });
             };
 
             eventSource.onerror = function (error) {
-                console.error('Video stream error:', error);
-                // 发生错误时显示默认图片
-                videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+                console.error('Video streams error:', error);
                 eventSource.close();
             };
 
             return eventSource;
         }
+
+        // 在页面加载时初始化视频流
+        let videoEventSource;
+        document.addEventListener('DOMContentLoaded', function () {
+            videoEventSource = setupVideoStreams();
+        });
+
+        // 在页面卸载时关闭连接
+        window.addEventListener('beforeunload', function () {
+            if (videoEventSource) {
+                videoEventSource.close();
+            }
+        });
 
         // 控制按钮事件监听
         document.getElementById('toggleCamera').addEventListener('click', function () {
@@ -459,16 +506,6 @@
         document.getElementById('toggleSpeaker').addEventListener('click', function () {
             // 向Flask后端发送切换扬声器状态的请求
             fetch('/api/button/toggle_speaker', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-        });
-
-        document.getElementById('switchMeeting').addEventListener('click', function () {
-            // 向Flask后端发送切换会议的请求
-            fetch('/api/button/switch_meeting', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

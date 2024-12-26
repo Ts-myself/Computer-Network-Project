@@ -369,6 +369,7 @@ class ConferenceClient:
                     self.current_screen_frame = frame_base64
                     self.current_screen_data["client_ip"] = screen_ip
                     self.current_screen_data["id"] = screen_id
+                    print("11111111111111111111111111111111111111111111111")
 
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
@@ -436,6 +437,7 @@ class ConferenceClient:
                     self.current_camera_frame = frame_base64
                     self.current_camera_data["client_ip"] = camera_ip
                     self.current_camera_data["id"] = camera_id
+                    print("---------------------------------------------")
 
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
@@ -852,15 +854,17 @@ class ConferenceClient:
         def video_streams():
             def generate():
                 while self.on_meeting:
+                    # print(f"current_camera_data: {self.current_camera_data}----------2222222222222-----------")
+                    # print(f"current_screen_data: {self.current_screen_data}----------3333333333333-----------")
                     if self.current_camera_data["id"] is not None:
                         camera_id = uuid.UUID(bytes=self.current_camera_data["id"])
                         camera_id = str(camera_id)
                         camera_ip = socket.inet_ntoa(
                             self.current_camera_data["client_ip"]
                         )
-                        print(f"camera_id: {camera_id}")
-                        print(f"camera_ip: {camera_ip}")
-                        print(len(self.current_camera_frame))
+                        # print(f"camera_id: {camera_id}")
+                        # print(f"camera_ip: {camera_ip}")
+                        # print(len(self.current_camera_frame))
                     else:
                         camera_id = None
                         camera_ip = None

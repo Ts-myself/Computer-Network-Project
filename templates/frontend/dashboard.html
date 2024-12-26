@@ -222,10 +222,12 @@
                         body: JSON.stringify({ conference_id: conferenceId })
                     });
 
-                    if (response.ok) {
+                    const data = await response.json();
+
+                    if (data.status === 'success') {
                         window.location.href = `/conference`;
                     } else {
-                        alert('加入会议失败，请检查会议号是否正确');
+                        alert(data.message || '加入会议失败');
                     }
                     joinConferenceModal.style.display = 'none';
                 } catch (error) {
