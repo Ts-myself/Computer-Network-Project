@@ -148,10 +148,16 @@ class ConferenceClient:
                 print(f"[Success] Joined conference {conference_id}")
                 self.client_info = data["clients"]
                 self.start_conference()
+                return {"status": "success"}
+            elif response.status_code == 404:
+                print("[Error] Conference not found")
+                return {"status": "error", "message": "Conference not found"}
             else:
                 print("[Error] Failed to join conference")
+                return {"status": "error", "message": "Failed to join conference"}
         except Exception as e:
             print(f"[Error] {str(e)}")
+            return {"status": "error", "message": str(e)}
 
     def quit_conference(self):
         """
@@ -285,15 +291,15 @@ class ConferenceClient:
                 with mss.mss() as sct:
                     monitor = sct.monitors[1]
                     img = sct.grab(monitor)
-                    img_np = np.array(img)
-                    img_np = cv2.resize(img_np, (640, 480))
-                    _, img_encode = cv2.imencode(
-                        ".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
-                    )
-                    img_bytes = img_encode.tobytes()
-                    self.send_object(img_bytes, self.sock_screen)
-
                     if self.is_screen_streaming:
+                        img_np = np.array(img)
+                        img_np = cv2.resize(img_np, (640, 480))
+                        _, img_encode = cv2.imencode(
+                            ".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
+                        )
+                        img_bytes = img_encode.tobytes()
+                        self.send_object(img_bytes, self.sock_screen)
+
                         screen_data = img_bytes
                         if screen_data is None:
                             continue
@@ -305,6 +311,14 @@ class ConferenceClient:
                         _, buffer = cv2.imencode(".jpg", frame)
                         frame_base64 = base64.b64encode(buffer).decode("utf-8")
                         self.current_screen_frame = frame_base64
+                        self.current_screen_data["client_ip"] = struct.unpack(
+                            ">4s", self.ip
+                        )[0]
+                        self.current_screen_data["id"] = struct.unpack(">16s", self.id)[
+                            0
+                        ]
+                    else:
+                        self.current_screen_frame = None
                         self.current_screen_data["client_ip"] = struct.unpack(
                             ">4s", self.ip
                         )[0]
@@ -355,13 +369,13 @@ class ConferenceClient:
             cap = initialize_camera()
             while self.on_meeting:
                 ret, frame = cap.read()
-                frame = cv2.resize(frame, (640, 480))
-                _, frame_encode = cv2.imencode(
-                    ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
-                )
-                frame_bytes = frame_encode.tobytes()
-                self.send_object(frame_bytes, self.sock_camera)
                 if self.is_camera_streaming:
+                    frame = cv2.resize(frame, (640, 480))
+                    _, frame_encode = cv2.imencode(
+                        ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
+                    )
+                    frame_bytes = frame_encode.tobytes()
+                    self.send_object(frame_bytes, self.sock_camera)
                     camera_data = frame_bytes
                     if camera_data is None:
                         continue
@@ -373,6 +387,12 @@ class ConferenceClient:
                     _, buffer = cv2.imencode(".jpg", frame)
                     frame_base64 = base64.b64encode(buffer).decode("utf-8")
                     self.current_camera_frame = frame_base64
+                    self.current_camera_data["client_ip"] = struct.unpack(
+                        ">4s", self.ip
+                    )[0]
+                    self.current_camera_data["id"] = struct.unpack(">16s", self.id)[0]
+                else:
+                    self.current_camera_frame = None
                     self.current_camera_data["client_ip"] = struct.unpack(
                         ">4s", self.ip
                     )[0]
@@ -591,7 +611,8 @@ class ConferenceClient:
             elif action == "join_conference":
                 data = request.json
                 self.conference_id = data["conference_id"]
-                self.join_conference(self.conference_id)
+                result = self.join_conference(self.conference_id)
+                return jsonify(result)  # 返回加入会议的结果
             elif action == "toggle_camera":
                 self.is_camera_streaming = not self.is_camera_streaming
                 print(f"[INFO] Camera streaming: {self.is_camera_streaming}")
@@ -609,7 +630,6 @@ class ConferenceClient:
                 print("[INFO] Quit meeting")
 
             print(f"[INFO] Button action: {action}")
-
             return jsonify({"status": "success"})
 
         @self.app.route("/api/recv_msg", methods=["GET"])
