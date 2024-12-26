@@ -858,6 +858,9 @@ class ConferenceClient:
                         camera_ip = socket.inet_ntoa(
                             self.current_camera_data["client_ip"]
                         )
+                        print(f"camera_id: {camera_id}")
+                        print(f"camera_ip: {camera_ip}")
+                        print(len(self.current_camera_frame))
                     else:
                         camera_id = None
                         camera_ip = None
@@ -868,6 +871,9 @@ class ConferenceClient:
                         screen_ip = socket.inet_ntoa(
                             self.current_screen_data["client_ip"]
                         )
+                        print(f"screen_id: {screen_id}")
+                        print(f"screen_ip: {screen_ip}")
+                        print(len(self.current_screen_frame))
                     else:
                         screen_id = None
                         screen_ip = None
@@ -891,6 +897,7 @@ class ConferenceClient:
                             "id": screen_id,
                         },
                     }
+
                     yield f"data: {json.dumps(streams_data)}\n\n"
                 
 
