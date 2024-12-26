@@ -37,7 +37,7 @@ class ConferenceServer:
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        self.mode = "cs"  # Default mode
+        self.mode = communicate_mode  # Default mode
         self.running = True
 
     def receive_object(self, connection, length):
@@ -449,14 +449,14 @@ class MainServer:
                 )
 
             conf_server = self.conference_servers[conference_id]
+            client_goal_ip = []
+            for client_info in conf_server.clients_info.values():
+                client_goal_ip.append(client_info['ip'])
             conf_server.clients_info[client_id] = {
                 "username": client_username,
                 "join_time": getCurrentTime(),
                 "ip": client_ip,
             }
-            client_goal_ip = []
-            for client_info in conf_server.clients_info.values():
-                client_goal_ip.append(client_info['ip'])
 
             if conf_server.mode == "cs":
                 conf_server.boardcast_client_info()
