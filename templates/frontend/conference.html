@@ -255,6 +255,11 @@
         let participants = []; // 用于存储参与者列表
         let participant_num = 0;
         let recv_msgs = []; // 用于存储接收到的消息
+        const lastValidFrames = {
+            camera: {},  // Format: {client_id: {frame: string, timestamp: number}}
+            screen: {}   // Format: {client_id: {frame: string, timestamp: number}}
+        };
+        const time_threshold = 300; // 5 seconds threshold, adjust as needed
 
         function initUserInfo() {
             fetch('/api/client_info')
@@ -374,26 +379,49 @@
 
             eventSource.onmessage = function (event) {
                 const data = JSON.parse(event.data);
-                console.log('Received video stream data:', data); // 添加调试信息
-                console.log(participants);
-                // 更新所有视频元素
+                const currentTime = Date.now();
+
                 participants.forEach(participant => {
                     const cameraElement = document.getElementById(`camera${participant.client_id}`);
                     const screenElement = document.getElementById(`screen${participant.client_id}`);
 
+                    // Handle camera frames
                     if (cameraElement) {
                         if (data.camera && data.camera.id === participant.client_id && data.camera.frame) {
+                            // Update last valid frame and timestamp
+                            lastValidFrames.camera[participant.client_id] = {
+                                frame: data.camera.frame,
+                                timestamp: currentTime
+                            };
                             cameraElement.src = `data:image/jpeg;base64,${data.camera.frame}`;
                         } else {
-                            cameraElement.src = '/static/camera_off.png';
+                            // Check if we have a valid recent frame
+                            const lastCamera = lastValidFrames.camera[participant.client_id];
+                            if (lastCamera && currentTime - lastCamera.timestamp < time_threshold) {
+                                cameraElement.src = `data:image/jpeg;base64,${lastCamera.frame}`;
+                            } else {
+                                cameraElement.src = '/static/camera_off.png';
+                            }
                         }
                     }
 
+                    // Handle screen sharing frames
                     if (screenElement) {
                         if (data.screen && data.screen.id === participant.client_id && data.screen.frame) {
+                            // Update last valid frame and timestamp
+                            lastValidFrames.screen[participant.client_id] = {
+                                frame: data.screen.frame,
+                                timestamp: currentTime
+                            };
                             screenElement.src = `data:image/jpeg;base64,${data.screen.frame}`;
                         } else {
-                            screenElement.src = '/static/screen_off.png';
+                            // Check if we have a valid recent frame
+                            const lastScreen = lastValidFrames.screen[participant.client_id];
+                            if (lastScreen && currentTime - lastScreen.timestamp < time_threshold) {
+                                screenElement.src = `data:image/jpeg;base64,${lastScreen.frame}`;
+                            } else {
+                                screenElement.src = '/static/screen_off.png';
+                            }
                         }
                     }
                 });

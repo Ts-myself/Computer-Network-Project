@@ -27,7 +27,7 @@ import uuid
 import ipaddress
 
 
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_TJL
 
 SERVER_INFO_PORT = 8887
 SERVER_PORT = 8888
@@ -222,7 +222,7 @@ class ConferenceClient:
             while self.on_meeting:
                 # control_message = self.sock_control.recv(12)
                 control_message = self.receive_object(self.sock_control, 32)
-                message , time_stamp , id , ip = self.unpack_object(control_message)
+                message, time_stamp, id, ip = self.unpack_object(control_message)
                 print(f"Received control message: {message}")
                 if message == 1:
                     self.screen_sleep_time += SCREEN_SLEEP_INCREASE
@@ -370,7 +370,10 @@ class ConferenceClient:
                     # 2 slow camera send
                     self.send_control(2, now_time)
                     print("time gap: ", time_gap)
-                    print("now time -last control time: ", now_time - self.last_control_camera_time)
+                    print(
+                        "now time -last control time: ",
+                        now_time - self.last_control_camera_time,
+                    )
                 camera_data = self.receive_object(self.sock_camera, camera_length)
                 # print("Successfully receive camera data")
                 frame = cv2.imdecode(

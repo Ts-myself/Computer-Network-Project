@@ -144,7 +144,7 @@ class ConferenceServer:
                     header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    control_message, control_time , control_id, control_ip = (
+                    control_message, control_time, control_id, control_ip = (
                         self.unpack_object(header)
                     )
                     if control_message == 1:
@@ -479,5 +479,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
