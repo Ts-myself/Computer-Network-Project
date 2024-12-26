@@ -629,12 +629,25 @@ class ConferenceClient:
         def video_streams():
             def generate():
                 while self.on_meeting:
-                    camera_id = uuid.UUID(bytes=self.current_camera_data["id"])
-                    camera_id = str(camera_id)
-                    camera_ip = socket.inet_ntoa(self.current_camera_data["client_ip"])
-                    screen_id = uuid.UUID(bytes=self.current_screen_data["id"])
-                    screen_id = str(screen_id)
-                    screen_ip = socket.inet_ntoa(self.current_screen_data["client_ip"])
+                    if self.current_camera_data["id"] is not None:
+                        camera_id = uuid.UUID(bytes=self.current_camera_data["id"])
+                        camera_id = str(camera_id)
+                        camera_ip = socket.inet_ntoa(
+                            self.current_camera_data["client_ip"]
+                        )
+                    else:
+                        camera_id = None
+                        camera_ip = None
+
+                    if self.current_screen_data["id"] is not None:
+                        screen_id = uuid.UUID(bytes=self.current_screen_data["id"])
+                        screen_id = str(screen_id)
+                        screen_ip = socket.inet_ntoa(
+                            self.current_screen_data["client_ip"]
+                        )
+                    else:
+                        screen_id = None
+                        screen_ip = None
                     streams_data = {
                         "camera": {
                             "frame": (
