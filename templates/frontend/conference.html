@@ -275,8 +275,8 @@
             const data = JSON.parse(event.data);
             // 将client_info对象转换为数组格式
             if (data.client_info && typeof data.client_info === 'object') {
-                participants = Object.entries(data.client_info).map(([client_ip, info]) => ({
-                    client_ip,
+                participants = Object.entries(data.client_info).map(([client_id, info]) => ({
+                    client_id,
                     username: info.username,
                     join_time: info.join_time
                 }));
@@ -329,7 +329,7 @@
                 // 创建屏幕共享视频元素
                 const screenVideo = document.createElement('img');
                 screenVideo.className = 'screen-display';
-                screenVideo.id = `screen${participant.client_ip}`;
+                screenVideo.id = `screen${participant.client_id}`;
                 screenVideo.src = '/static/screen_off.png';  // 设置默认图片
 
                 const cameraContainer = document.createElement('div');
@@ -338,7 +338,7 @@
                 // 创建摄像头视频元素
                 const cameraVideo = document.createElement('img');
                 cameraVideo.className = 'user-camera';
-                cameraVideo.id = `camera${participant.client_ip}`;
+                cameraVideo.id = `camera${participant.client_id}`;
                 cameraVideo.src = '/static/camera_off.png';  // 设置默认图片
 
                 cameraContainer.appendChild(cameraVideo);
@@ -378,11 +378,11 @@
                 console.log(participants);
                 // 更新所有视频元素
                 participants.forEach(participant => {
-                    const cameraElement = document.getElementById(`camera${participant.client_ip}`);
-                    const screenElement = document.getElementById(`screen${participant.client_ip}`);
+                    const cameraElement = document.getElementById(`camera${participant.client_id}`);
+                    const screenElement = document.getElementById(`screen${participant.client_id}`);
 
                     if (cameraElement) {
-                        if (data.camera && (data.camera.client_ip === participant.client_ip || true) && data.camera.frame) {
+                        if (data.camera && data.camera.id === participant.client_id && data.camera.frame) {
                             cameraElement.src = `data:image/jpeg;base64,${data.camera.frame}`;
                         } else {
                             cameraElement.src = '/static/camera_off.png';
@@ -390,7 +390,7 @@
                     }
 
                     if (screenElement) {
-                        if (data.screen && (data.screen.client_ip === participant.client_ip || true) && data.screen.frame) {
+                        if (data.screen && data.screen.id === participant.client_id && data.screen.frame) {
                             screenElement.src = `data:image/jpeg;base64,${data.screen.frame}`;
                         } else {
                             screenElement.src = '/static/screen_off.png';

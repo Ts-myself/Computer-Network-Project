@@ -27,7 +27,7 @@ import uuid
 import ipaddress
 
 
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_TJL
 
 SERVER_INFO_PORT = 8887
 SERVER_PORT = 8888
@@ -109,7 +109,12 @@ class ConferenceClient:
         create a conference: send create-conference request to server and obtain necessary data to
         """
         try:
-            response = requests.post(f"{self.server_addr}/create_conference")
+            data = {
+                "username": self.username,
+                "client_ip": self.client_ip,
+                "id": str(uuid.UUID(bytes=self.unique_id)),
+            }
+            response = requests.post(f"{self.server_addr}/create_conference", json=data)
             if response.status_code == 200:
                 data = response.json()
                 self.conference_id = data["conference_id"]
@@ -128,7 +133,7 @@ class ConferenceClient:
             data = {
                 "username": self.username,
                 "client_ip": self.client_ip,
-                "id": str(self.unique_id),
+                "id": str(uuid.UUID(bytes=self.unique_id)),
             }
             response = requests.post(
                 f"{self.server_addr}/join_conference/{conference_id}", json=data
@@ -155,8 +160,9 @@ class ConferenceClient:
         self.on_meeting = False
 
         try:
+            data = {"id": str(uuid.UUID(bytes=self.unique_id))}
             response = requests.post(
-                f"{self.server_addr}/quit_conference/{self.conference_id}"
+                f"{self.server_addr}/quit_conference/{self.conference_id}", json=data
             )
             if response.status_code == 200:
 
@@ -188,11 +194,8 @@ class ConferenceClient:
     def recv_msg(self):
         print("[INFO] Starting message receiving...")
         try:
-            counter = 0
             while self.on_meeting:
                 data = self.sock_msg.recv(BUFFER_SIZE)
-                counter += 1
-                # print(f"message count: {counter}")
                 if data:
                     # Parse the received JSON message
                     msg_data = json.loads(data.decode())
@@ -307,7 +310,7 @@ class ConferenceClient:
                     # 1 slow screen send
                     self.send_control(1, now_time)
                 screen_data = self.receive_object(self.sock_screen, screen_length)
-                print("Successfully receive screen data")
+                # print("Successfully receive screen data")
                 frame = cv2.imdecode(
                     np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -362,7 +365,7 @@ class ConferenceClient:
                     # 2 slow camera send
                     self.send_control(2, now_time)
                 camera_data = self.receive_object(self.sock_camera, camera_length)
-                print("Successfully receive camera data")
+                # print("Successfully receive camera data")
                 frame = cv2.imdecode(
                     np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -391,9 +394,6 @@ class ConferenceClient:
         try:
             while self.on_meeting:
                 sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
-                # timestamp = time.time()
-                # packet = struct.pack(f"!d16s", timestamp, self.unique_id) + sent_audio
-                # header = struct.pack("!I", len(packet))
                 if self.microphone_on:
                     self.send_object(sent_audio, self.sock_audio)
 
@@ -554,7 +554,7 @@ class ConferenceClient:
                 while True:
                     infos = {
                         "client_ip": self.client_ip,
-                        "id": str(self.unique_id),
+                        "id": str(uuid.UUID(bytes=self.unique_id)),
                         "username": self.username,
                         "on_meeting": self.on_meeting,
                         "conference_id": self.conference_id,
@@ -614,7 +614,7 @@ class ConferenceClient:
                 msg_json = {
                     "msg": msg,
                     "ip": self.client_ip,
-                    "id": str(self.unique_id),
+                    "id": str(uuid.UUID(bytes=self.unique_id)),
                     "username": self.username,
                     "timestamp": getCurrentTime(),
                 }

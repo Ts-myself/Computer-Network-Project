@@ -10,7 +10,7 @@ import json
 
 
 class ConferenceServer:
-    def __init__(self, conference_id, data_ports, host_ip, server_ip):
+    def __init__(self, conference_id, data_ports, host_id, server_ip):
         """
         Initialize a ConferenceServer instance.
         :param conference_id: Unique identifier for the conference.
@@ -18,8 +18,8 @@ class ConferenceServer:
         """
         self.server_ip = server_ip
         self.conference_id = conference_id
-        self.data_ports = data_ports 
-        self.host_ip = host_ip
+        self.data_ports = data_ports
+        self.host_id = host_id
 
         self.clients_info = {}
 
@@ -29,7 +29,7 @@ class ConferenceServer:
         self.client_tcps_camera = dict()
         self.client_tcps_screen = dict()
         self.client_tcps_audio = dict()
-        
+
         self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -39,6 +39,7 @@ class ConferenceServer:
 
         self.mode = "Client-Server"  # Default mode
         self.running = True
+
     def receive_object(self, connection, length):
         object = b""
         while len(object) < length:
@@ -212,7 +213,6 @@ class ConferenceServer:
                 finally:
                     client_conn.close()
 
-
         self.sock_info.close()
         self.sock_control.close()
         self.sock_msg.close()
@@ -221,30 +221,30 @@ class ConferenceServer:
         self.sock_screen.close()
 
         print("All TCP connections are closed and dictionaries are cleared.")
-        
-    def quit_conference(self, client_addr):
+
+    def quit_conference(self, client_id):
         """
         Quit conference: Remove a client from the specified ConferenceServer.
-        :param client_ip: Unique identifier of the client leaving the conference.
+        :param client_id: Unique identifier of the client leaving the conference.
         :return: Dictionary with the result (success or error).
         """
         all_connections = self.which_type_tcp("all")
-        
+
         for conn_dict in all_connections:
-            if client_addr in conn_dict:
-                conn = conn_dict[client_addr]
+            if client_id in conn_dict:
+                conn = conn_dict[client_id]
                 try:
                     conn.shutdown(socket.SHUT_RDWR)
                 except OSError:
                     pass
                 finally:
                     conn.close()
-                    del conn_dict[client_addr]
-                    print(f"Connection with {client_addr} closed and removed.")
-                    
-        self.clients_info.pop(client_addr)
-        
-        print(f"[INFO] Client {client_addr} has left the {self.conference_id}.")
+                    del conn_dict[client_id]
+                    print(f"Connection with {client_id} closed and removed.")
+
+        self.clients_info.pop(client_id)
+
+        print(f"[INFO] Client {client_id} has left the {self.conference_id}.")
 
     def accept_connections(self, sock, sock_type):
         """
@@ -254,12 +254,12 @@ class ConferenceServer:
             try:
                 client_conn, client_addr = sock.accept()
                 print(f"[{self.conference_id}] accept {sock_type}")
-                
+
                 self.which_type_tcp(sock_type)[client_addr] = client_conn
                 threading.Thread(
                     target=self.handle_data,
                     args=(client_conn, self.which_type_tcp(sock_type), sock_type),
-                    daemon=True
+                    daemon=True,
                 ).start()
 
             except Exception as e:
@@ -271,28 +271,32 @@ class ConferenceServer:
         """
         Start the ConferenceServer and begin handling clients and data streams.
         """
-        
 
         sock_types = ["info", "control", "msg", "audio", "camera", "screen"]
-        
+
         for sock_type in sock_types:
-            self.which_type_sock(sock_type).setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            print(f"{sock_type} server started at {self.server_ip}:{self.data_ports[sock_type]}")
-            self.which_type_sock(sock_type).bind((self.server_ip, self.data_ports[sock_type]))
+            self.which_type_sock(sock_type).setsockopt(
+                socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
+            )
+            print(
+                f"{sock_type} server started at {self.server_ip}:{self.data_ports[sock_type]}"
+            )
+            self.which_type_sock(sock_type).bind(
+                (self.server_ip, self.data_ports[sock_type])
+            )
             self.which_type_sock(sock_type).listen(5)
-            
+
         for sock_type in sock_types:
             threading.Thread(
-                target=self.accept_connections, 
-                args=(self.which_type_sock(sock_type), sock_type), 
-                daemon=True
+                target=self.accept_connections,
+                args=(self.which_type_sock(sock_type), sock_type),
+                daemon=True,
             ).start()
 
         # Keep main thread alive
         while self.running:
             time.sleep(1)
-            
-            
+
     def which_type_tcp(self, type):
         if type == "info":
             return self.client_tcps_info
@@ -307,12 +311,18 @@ class ConferenceServer:
         if type == "screen":
             return self.client_tcps_screen
         if type == "all":
-            return [self.client_tcps_info, self.client_tcps_control, self.client_tcps_msg, 
-                    self.client_tcps_audio, self.client_tcps_camera, self.client_tcps_screen]
+            return [
+                self.client_tcps_info,
+                self.client_tcps_control,
+                self.client_tcps_msg,
+                self.client_tcps_audio,
+                self.client_tcps_camera,
+                self.client_tcps_screen,
+            ]
         else:
             print(f"[Error] Invalid socket type: {type}")
             return None
-        
+
     def which_type_sock(self, type):
         if type == "info":
             return self.sock_info
@@ -327,12 +337,17 @@ class ConferenceServer:
         if type == "screen":
             return self.sock_screen
         if type == "all":
-            return [self.sock_info, self.sock_control, self.sock_msg, 
-                    self.sock_audio, self.sock_camera, self.sock_screen]
+            return [
+                self.sock_info,
+                self.sock_control,
+                self.sock_msg,
+                self.sock_audio,
+                self.sock_camera,
+                self.sock_screen,
+            ]
         else:
             print(f"[Error] Invalid socket type: {type}")
             return None
-        
 
 
 class MainServer:
@@ -364,13 +379,15 @@ class MainServer:
             Create a new conference: Initialize and start a new ConferenceServer instance.
             :return: A dictionary with {status, message, conference_id, ports}.
             """
-            client_ip = request.remote_addr
+            data = request.get_json()
+            client_ip = data["client_ip"]
+            client_id = data["id"]
             conf_id = self.generate_conference_id()
             self.conference_servers[conf_id] = ConferenceServer(
-                conf_id, self.conf_ports, client_ip, self.server_ip
+                conf_id, self.conf_ports, client_id, self.server_ip
             )
             threading.Thread(target=self.conference_servers[conf_id].start).start()
-            print(f"[INFO] Created conference {conf_id} for {client_ip}")
+            print(f"[INFO] Created conference {conf_id} for {client_id}")
             return jsonify(
                 {
                     "status": "success",
@@ -390,6 +407,7 @@ class MainServer:
             data = request.get_json()
             client_username = data["username"]
             client_ip = request.remote_addr
+            client_id = data["id"]
 
             if conference_id not in self.conference_servers:
                 return (
@@ -397,14 +415,14 @@ class MainServer:
                     404,
                 )
 
-            if client_ip in self.conference_servers[conference_id].clients_info.keys():
+            if client_id in self.conference_servers[conference_id].clients_info.keys():
                 return (
                     jsonify({"status": "error", "message": "Client already joined"}),
                     400,
                 )
 
             conf_server = self.conference_servers[conference_id]
-            conf_server.clients_info[client_ip] = {
+            conf_server.clients_info[client_id] = {
                 "username": client_username,
                 "join_time": getCurrentTime(),
             }
@@ -422,31 +440,42 @@ class MainServer:
         @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
         def handle_quit_conference(conference_id):
             """
-            Quit conference: Remove a client from the specified ConferenceServer.
-                             If the client is the host, cancel the conference.
+            Quit conference: Remove a client from the specified ConferenceServer. If the client is the host, cancel the conference.
             """
             if conference_id in self.conference_servers:
-                client_ip = request.remote_addr
+                client_id = request.get_json()["id"]
                 conf_server = self.conference_servers[conference_id]
-                
-                if client_ip == conf_server.host_ip:
+
+                if client_id == conf_server.host_id:
                     # quit & cancel
                     conf_server.cancel_conference()
                     del self.conference_servers[conference_id]
-                    
+
                     print(f"[INFO] Conference {conference_id} is deleted by the host.")
-                    print(f"[INFO] Current conferences: {self.conference_servers.keys()}")
-                    
+                    print(
+                        f"[INFO] Current conferences: {self.conference_servers.keys()}"
+                    )
+
                 else:
                     # quit
-                    conf_server.quit_conference(client_ip)
-                    
+                    conf_server.quit_conference(client_id)
+
+                conf_server.boardcast_client_info()
+
                 return (
-                    jsonify({"status": "success", "message": "Client has left the conference"}),
+                    jsonify(
+                        {
+                            "status": "success",
+                            "message": "Client has left the conference",
+                        }
+                    ),
                     200,
                 )
             else:
-                return jsonify({"status": "error", "message": "Conference not found"}), 404
+                return (
+                    jsonify({"status": "error", "message": "Conference not found"}),
+                    404,
+                )
 
     def start(self):
         """
@@ -457,5 +486,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
