@@ -292,7 +292,7 @@ class ConferenceClient:
                     )
                     img_bytes = img_encode.tobytes()
                     self.send_object(img_bytes, self.sock_screen)
-                    
+
                     if self.is_screen_streaming:
                         screen_data = img_bytes
                         if screen_data is None:
@@ -338,10 +338,10 @@ class ConferenceClient:
                     continue
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                if self.is_screen_streaming:
-                    self.current_screen_frame = frame_base64
-                    self.current_screen_data["client_ip"] = screen_ip
-                    self.current_screen_data["id"] = screen_id
+
+                self.current_screen_frame = frame_base64
+                self.current_screen_data["client_ip"] = screen_ip
+                self.current_screen_data["id"] = screen_id
 
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
@@ -405,10 +405,10 @@ class ConferenceClient:
                     continue
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
-                if self.is_camera_streaming:
-                    self.current_camera_frame = frame_base64
-                    self.current_camera_data["client_ip"] = camera_ip
-                    self.current_camera_data["id"] = camera_id
+
+                self.current_camera_frame = frame_base64
+                self.current_camera_data["client_ip"] = camera_ip
+                self.current_camera_data["id"] = camera_id
 
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
@@ -491,6 +491,13 @@ class ConferenceClient:
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        self.sock_info.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.sock_control.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.sock_msg.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.sock_camera.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.sock_screen.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.sock_audio.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
         try:
             self.sock_control.connect((self.server_ip, self.server_ports["control"]))
@@ -661,20 +668,12 @@ class ConferenceClient:
                         screen_ip = None
                     streams_data = {
                         "camera": {
-                            "frame": (
-                                self.current_camera_frame
-                                if self.is_camera_streaming
-                                else None
-                            ),
+                            "frame": (self.current_camera_frame),
                             "client_ip": camera_ip,
                             "id": camera_id,
                         },
                         "screen": {
-                            "frame": (
-                                self.current_screen_frame
-                                if self.is_screen_streaming
-                                else None
-                            ),
+                            "frame": (self.current_screen_frame),
                             "client_ip": screen_ip,
                             "id": screen_id,
                         },
