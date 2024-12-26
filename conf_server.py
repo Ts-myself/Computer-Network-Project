@@ -35,6 +35,24 @@ class ConferenceServer:
         self.mode = communicate_mode
         self.running = True
 
+    def receive_object(self, connection, length):
+        object = b""
+        while len(object) < length:
+            packet = b""
+            packet += connection.recv(length - len(object))
+            if not packet:
+                print("Connection closed")
+                break
+            object += packet
+        return object
+
+    def unpack_object(self, data):
+        object_length = struct.unpack(">I", data[:4])[0]
+        object_time = struct.unpack(">d", data[4:12])[0]
+        object_id = struct.unpack(">16s", data[12:28])[0]
+        object_ip = struct.unpack(">4s", data[28:32])[0]
+        return object_length, object_time, object_id, object_ip
+
     def handle_data(self, reader, writer, data_type):
         """
         Receive streaming data from a client and forward it to other participants.
@@ -60,107 +78,51 @@ class ConferenceServer:
         elif data_type == "audio":
             try:
                 while self.running:
-                    # Receive audio data via UDP
-                    data = reader.recv(BUFFER_SIZE)
-
-                    # Forward the audio data to all other clients
+                    header = self.receive_object(reader, HEADER_LENGTH)
+                    if not header:
+                        break
+                    audio_length, audio_time, audio_id, audio_ip = self.unpack_object(header)
+                    audio_data = self.receive_object(reader, audio_length)
+                    print(f"Received audio data: {len(audio_data)} bytes")
                     for client_conn in self.client_tcps_audio.values():
-                        # if client_conn == reader: # debug only
-                        if client_conn != reader:  # Don't send back to the sender
-                            client_conn.send(data)
+                        if client_conn == reader: # debug only
+                        # if client_conn != reader:  # Don't send back to the sender
+                            client_conn.send(header)
+                            client_conn.send(audio_data)
+                            print(f"Successfully forwarded audio data to {client_conn.getpeername()}")
 
             except Exception as e:
                 print(f"[Error] Audio handling error: {str(e)}")
         elif data_type == "screen":
             try:
                 while self.running:
-                    # Receive camera data via TCP
-                    # print(reader.getpeername())
-                    header = b""
-                    while len(header) < 12:
-                        packet = b""
-                        packet = reader.recv(12 - len(header))  # 接收剩余需要的数据量
-                        if not packet:
-                            # 如果没有收到数据，可能是连接被关闭了
-                            print("Connection closed by the client.")
-                            break
-                        header += packet  # 将接收到的数据追加到header变量中
-
+                    header = self.receive_object(reader, HEADER_LENGTH)  
                     if not header:
                         break
-
-                    """
-                    img_length = len(img_bytes)
-                    header = struct.pack(">I", img_length)
-                    time_stamp = time.time()
-                    time_stamp_length = len(str(time_stamp))
-                    header += struct.pack(">I", time_stamp_length)
-                    """
-
-                    frame_length = struct.unpack(">I", header[:4])[0]
-                    frame_time = struct.unpack(">d", header[4:])[0]
-                    # print(f"Received screen header: {frame_length} bytes")
-                    # print(f"Received screen header time: {frame_time}")
-                    data = b""
-                    while len(data) < frame_length:
-                        packet = b""
-                        packet = reader.recv(
-                            frame_length - len(data)
-                        )  # 接收剩余需要的数据量
-                        if not packet:
-                            # 如果没有收到数据，可能是连接被关闭了
-                            print("Connection closed by the client.")
-                            break
-                        data += packet  # 将接收到的数据追加到data变量中
-                    # print(f"Received screen data: {len(data)} bytes")
-                    # Forward the camera data to all other clients
+                    screen_length, screen_time, screen_id, screen_ip = self.unpack_object(header)
+                    screen_data = self.receive_object(reader, screen_length)
+                    print(f"Received screen data: {len(screen_data)} bytes")
                     for client_conn in self.client_tcps_screen.values():
                         # if client_conn != reader:
                         client_conn.send(header)
-                        client_conn.send(data)
-                        # print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        client_conn.send(screen_data)
+                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
             except Exception as e:
                 print(f"[Error] Camera handling error: {str(e)}")
         elif data_type == "camera":
             try:
                 while self.running:
-                    # Receive camera data via TCP
-                    # print(reader.getpeername())
-                    header = b""
-                    while len(header) < 12:
-                        packet = b""
-                        packet = reader.recv(12 - len(header))  # 接收剩余需要的数据量
-                        if not packet:
-                            # 如果没有收到数据，可能是连接被关闭了
-                            print("Connection closed by the client.")
-                            break
-                        header += packet  # 将接收到的数据追加到header变量中
-
+                    header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-
-                    frame_length = struct.unpack(">I", header[:4])[0]
-                    frame_time = struct.unpack(">d", header[4:])[0]
-                    # print(f"Received camera header: {frame_length} bytes")
-                    # print(f"Received camera header time: {frame_time}")
-                    data = b""
-                    while len(data) < frame_length:
-                        packet = b""
-                        packet = reader.recv(
-                            frame_length - len(data)
-                        )  # 接收剩余需要的数据量
-                        if not packet:
-                            # 如果没有收到数据，可能是连接被关闭了
-                            print("Connection closed by the client.")
-                            break
-                        data += packet  # 将接收到的数据追加到data变量中
-                    # print(f"Received camera data: {len(data)} bytes")
-                    # Forward the camera data to all other clients
+                    camera_length, camera_time, camera_id, camera_ip = self.unpack_object(header)
+                    data = self.receive_object(reader, camera_length)
+                    print(f"Received camera data: {len(data)} bytes")
                     for client_conn in self.client_tcps_camera.values():
                         # if client_conn != reader:
                         client_conn.send(header)
                         client_conn.send(data)
-                        # print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
             except Exception as e:
                 print(f"[Error] Camera handling error: {str(e)}")
         elif data_type == "control":
