@@ -86,7 +86,7 @@ class ConferenceClient:
 
         self.recv_msgs = []
         self.new_msgs = []
-        self.conn_mode = "p2p"
+        # self.conn_mode = "p2p"
 
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -101,7 +101,6 @@ class ConferenceClient:
         self.mixed_audio = queue.Queue(maxsize=10)
 
         # self.audio_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # self.audio_udp_socket.bind((self.client_ip, self.client_audio_port))
         # self.audio_udp_socket.setblocking(False)  # 设置非阻塞模式
 
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -274,7 +273,25 @@ class ConferenceClient:
                 data = self.sock_info.recv(BUFFER_SIZE)
                 if data:
                     info_data = json.loads(data.decode())
+                    mode = info_data['mode']
+                    if mode == "p2p2cs":
+                        self.server_ip = SERVER_IP
+                        self.reconnect()
+                    elif mode == "cs2p2p":
+                        rest_ip1 = info_data['clients'].keys()[0]
+                        rest_ip2 = info_data['clients'].keys()[1]
+                        if rest_ip1 == self.client_ip :
+                            threading.Thread(target=self.p2p_quit()).start()
+                        elif rest_ip2 == self.client_ip:
+                            self.server_ip = info_data['clients'].values()[0]
+                            self.reconnect()
+                    elif mode == "p2pquit":
+                        # self.server_ip = SERVER_IP
+                        rest_ip = info_data['clients'].keys()[0]
+                        if rest_ip == self.client_ip:
+                            threading.Thread(target=self.p2p_quit()).start()
                     print(f"[INFO] Received info: {info_data}")
+                    del info_data['mode']
                     self.client_info = info_data
         except Exception as e:
             print(f"[Error] Failed to receive info: {str(e)}")
@@ -548,9 +565,6 @@ class ConferenceClient:
             #     time.sleep(CHUNK / RATE)
 
     def create_conference_conn(self):
-        # self.sock_control.bind()
-        # hostname = socket.gethostname()
-        # host = socket.gethostbyname(socket.gethostname())  
         ip_addresses = get_all_ip_addresses()
         if (len(ip_addresses) == 0):
             print("No IP address found.")
@@ -563,19 +577,20 @@ class ConferenceClient:
         print(f"{host}")
 
         self.sock_control.bind((host, SERVER_CONTROL_PORT))
-        self.sock_control.listen(2)
+        self.sock_control.listen(5)
 
         self.sock_msg.bind((host, SERVER_MSG_PORT))
-        self.sock_msg.listen(2)
+        self.sock_msg.listen(5)
 
         self.sock_camera.bind((host, SERVER_CAMERA_PORT))
-        self.sock_camera.listen(2)
+        self.sock_camera.listen(5)
 
         self.sock_screen.bind((host, SERVER_SCREEN_PORT))
-        self.sock_screen.listen(2)
+        self.sock_screen.listen(5)
         
         self.sock_audio.bind((host, SERVER_AUDIO_PORT))
-        self.sock_audio.listen(2)
+        self.sock_audio.listen(5)
+
 
         try:
             self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
@@ -585,12 +600,6 @@ class ConferenceClient:
             self.on_meeting = False
         finally:
             pass
-            # Terminate PyAudio when the conference ends
-            # self.audio.terminate()
-        # print("test whether block")
-        # get client conn
-        print("test-----------------------------------------------------------")
-        # print(f"{host} and {SERVER_CONTROL_PORT}")
         conn,addr = self.sock_control.accept()
         self.sock_control = conn
         conn,addr = self.sock_msg.accept()
@@ -601,7 +610,6 @@ class ConferenceClient:
         self.sock_screen = conn
         conn,addr = self.sock_audio.accept()
         self.sock_audio = conn
-        print("fail-----------------------------------------------------------------------")
 
         threading.Thread(target=self.recv_control).start()
         threading.Thread(target=self.recv_msg).start()
@@ -609,12 +617,97 @@ class ConferenceClient:
         threading.Thread(target=self.recv_screen).start()
         threading.Thread(target=self.audio_receiver).start()
         threading.Thread(target=self.audio_mixer).start()
+        
 
         self.is_streaming = True
-        # while self.conn_mode == "p2p":
-            # print("in---------------")
-            # time.sleep(0.5)
-        # print("out------------------")
+    def p2p_quit(self):
+        self.sock_control.close()
+        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_msg.close()
+        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_camera.close()
+        self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_screen.close()
+        self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_audio.close()
+        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        ip_addresses = get_all_ip_addresses()
+        if (len(ip_addresses) == 0):
+            print("No IP address found.")
+            return
+        if (len(ip_addresses) == 1):
+            host = list(ip_addresses.values())[0]
+        else :
+            print("Multiple IP addresses found!!!!")
+            return
+        print(f"{host}")
+
+        self.sock_control.bind((host, SERVER_CONTROL_PORT))
+        self.sock_control.listen(5)
+
+        self.sock_msg.bind((host, SERVER_MSG_PORT))
+        self.sock_msg.listen(5)
+
+        self.sock_camera.bind((host, SERVER_CAMERA_PORT))
+        self.sock_camera.listen(5)
+
+        self.sock_screen.bind((host, SERVER_SCREEN_PORT))
+        self.sock_screen.listen(5)
+        
+        self.sock_audio.bind((host, SERVER_AUDIO_PORT))
+        self.sock_audio.listen(5)
+
+        conn,addr = self.sock_control.accept()
+        self.sock_control = conn
+        conn,addr = self.sock_msg.accept()
+        self.sock_msg = conn
+        conn,addr = self.sock_camera.accept()
+        self.sock_camera = conn
+        conn,addr = self.sock_screen.accept()
+        self.sock_screen = conn
+        conn,addr = self.sock_audio.accept()
+        self.sock_audio = conn
+
+        threading.Thread(target=self.recv_control).start()
+        threading.Thread(target=self.recv_msg).start()
+        threading.Thread(target=self.recv_camera).start()
+        threading.Thread(target=self.recv_screen).start()
+        threading.Thread(target=self.audio_receiver).start()
+        threading.Thread(target=self.audio_mixer).start()
+        
+
+        self.is_streaming = True
+
+    def reconnect(self):
+        self.sock_control.close()
+        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_msg.close()
+        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_camera.close()
+        self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_screen.close()
+        self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_audio.close()
+        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        try:
+            self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
+            self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
+            self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
+            self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
+            self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
+            threading.Thread(target=self.recv_control).start()
+            threading.Thread(target=self.recv_msg).start()
+            threading.Thread(target=self.recv_camera).start()
+            threading.Thread(target=self.recv_screen).start()
+            threading.Thread(target=self.audio_receiver).start()
+            threading.Thread(target=self.audio_mixer).start()
+        except Exception as e:
+            print(f"[Error] Failed to start conference: {str(e)}")
+            self.on_meeting = False
+        finally:
+            pass
 
     def start_conference(self):
         """

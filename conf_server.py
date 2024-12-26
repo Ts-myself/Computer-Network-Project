@@ -171,7 +171,13 @@ class ConferenceServer:
         # except Exception as e:
         #     print(f"[ERROR] Error in logging task: {e}")
 
-    def boardcast_client_info(self):
+    # 0 is zhengchang
+    # 1 p2p to cs
+    # 2 cs to p2p
+    # 3 p2p jianshao
+    # 4 cs normol
+    # 5 cs2p2p
+    def boardcast_client_info(self,state = 0):
         """
         Boardcast client info to all clients.
         """
@@ -181,7 +187,28 @@ class ConferenceServer:
         for client_conn in self.client_tcps_info.values():
             try:
                 print(f"[INFO] Sending to client: {client_conn.getpeername()}")
-                client_conn.send(json.dumps(self.clients_info).encode())
+                if state == 0:
+                    data ={
+                        "mode": "normal",
+                        **self.clients_info
+                    }
+                elif state == 1:
+                    data = {
+                        "mode": "p2p2cs",
+                        **self.clients_info
+                    }
+                elif state == 2:
+                    data = {
+                        "mode": "cs2p2p",
+                        **self.clients_info
+                    }
+                elif state == 3:
+                    data = {
+                        "mode": "p2pquit",
+                        **self.clients_info
+                    }
+                client_conn.send(json.dumps(data).encode())     
+                # client_conn.send(json.dumps(self.clients_info).encode())
                 print(f"[INFO] Successfully sent to {client_conn.getpeername()}")
             except Exception as e:
                 print(f"[ERROR] Failed to send to client {client_conn}: {str(e)}")
@@ -473,9 +500,9 @@ class MainServer:
                 "join_time": getCurrentTime(),
             }
             # print(conf_server.clients_info)
-            conf_server.boardcast_client_info()
 
             if conf_server.mode == "cs":
+                conf_server.boardcast_client_info()
                 return jsonify(
                     {
                         "status": "success",
@@ -485,6 +512,7 @@ class MainServer:
                     }
                 )
             elif conf_server.mode == "p2p" and len(client_goal_ip) == 1:
+                conf_server.boardcast_client_info()
                 return jsonify(
                     {
                         "status": "success",
@@ -495,6 +523,7 @@ class MainServer:
                 )
             else:
                 conf_server.mode = "cs"
+                conf_server.boardcast_client_info(1)
                 return jsonify(
                     {
                         "status": "success",
@@ -517,6 +546,13 @@ class MainServer:
                 conf_server = self.conference_servers[conference_id]
                 conf_server.clients_info.pop(client_ip)
                 print(conf_server.clients_info)
+                if conf_server.mode == "p2p":
+                    conf_server.boardcast_client_info(3)
+                elif conf_server.mode == "cs" and len(conf_server.clients_info) >=3:
+                    conf_server.boardcast_client_info()
+                else :
+                    conf_server.mode = "p2p"
+                    conf_server.boardcast_client_info(2)
                 return jsonify({"status": "success"})
             return jsonify({"status": "error", "message": "Conference not found"}), 404
 
