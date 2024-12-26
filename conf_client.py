@@ -305,6 +305,9 @@ class ConferenceClient:
                 screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
                     header
                 )
+                print(
+                    f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
+                )
 
                 now_time = time.time()
                 time_gap = now_time - screen_time
@@ -316,9 +319,13 @@ class ConferenceClient:
                     self.send_control(1, now_time)
                 screen_data = self.receive_object(self.sock_screen, screen_length)
                 # print("Successfully receive screen data")
+                if screen_data is None:
+                    continue
                 frame = cv2.imdecode(
                     np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR
                 )
+                if frame is None:
+                    continue
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 if self.is_screen_streaming:
@@ -338,6 +345,7 @@ class ConferenceClient:
             cap = initialize_camera()
             while self.on_meeting:
                 ret, frame = cap.read()
+                frame = cv2.resize(frame, (640, 480))
                 _, frame_encode = cv2.imencode(
                     ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
                 )
@@ -360,6 +368,9 @@ class ConferenceClient:
                 camera_length, camera_time, camera_id, camera_ip = self.unpack_object(
                     header
                 )
+                print(
+                    f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
+                )
 
                 now_time = time.time()
                 time_gap = now_time - camera_time
@@ -376,9 +387,13 @@ class ConferenceClient:
                     )
                 camera_data = self.receive_object(self.sock_camera, camera_length)
                 # print("Successfully receive camera data")
+                if camera_data is None:
+                    continue
                 frame = cv2.imdecode(
                     np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR
                 )
+                if frame is None:
+                    continue
                 _, buffer = cv2.imencode(".jpg", frame)
                 # show
                 # cv2.imshow('frame', frame)
