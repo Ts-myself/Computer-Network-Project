@@ -26,27 +26,29 @@ class ConferenceServer:
         self.types = ["info", "control", "msg", "audio", "camera", "screen"]
 
         self.tcps = {
-            'info': dict(),
-            'control': dict(),
-            'msg': dict(),
-            'audio': dict(),
-            'camera': dict(),
-            'screen': dict()
+            "info": dict(),
+            "control": dict(),
+            "msg": dict(),
+            "audio": dict(),
+            "camera": dict(),
+            "screen": dict(),
         }
-        
+
         self.socks = {
-            'info': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
-            'control': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
-            'msg': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
-            'audio': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
-            'camera': socket.socket(socket.AF_INET, socket.SOCK_STREAM),
-            'screen': socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            "info": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+            "control": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+            "msg": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+            "audio": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+            "camera": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+            "screen": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
         }
-       
+
         self.mode = "Client-Server"  # Default mode
         self.running = True
-        self.printer("info", f"Conference {self.conference_id} is created by {self.host_id}")
-        
+        self.printer(
+            "info", f"Conference {self.conference_id} is created by {self.host_id}"
+        )
+
     def receive_object(self, connection, length):
         object = b""
         while len(object) < length:
@@ -100,7 +102,9 @@ class ConferenceServer:
                     header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    audio_length, audio_time, audio_id, audio_ip = self.unpack_object(header)
+                    audio_length, audio_time, audio_id, audio_ip = self.unpack_object(
+                        header
+                    )
                     audio_data = self.receive_object(reader, audio_length)
                     for client_conn in self.tcps[data_type].values():
                         # if client_conn == reader:  # debug only
@@ -141,21 +145,25 @@ class ConferenceServer:
         """
         Boardcast client info to all clients.
         """
-        self.printer("info", f"Broadcasting client info to {len(self.tcps['info'])} clients", 'info')
-        for client_conn in self.tcps['info'].values():
+        self.printer(
+            "info",
+            f"Broadcasting client info to {len(self.tcps['info'])} clients",
+            "info",
+        )
+        for client_conn in self.tcps["info"].values():
             try:
                 client_conn.send(json.dumps(self.clients_info).encode())
             except Exception as e:
-                self.printer("error", f"Error in boardcast: {str(e)}", 'info')
+                self.printer("error", f"Error in boardcast: {str(e)}", "info")
 
     def cancel_conference(self):
         """
         Gracefully close all client TCP connections when the conference ends.
         """
         self.running = False
-        
+
         self.printer("info", "Closing all TCPs and sockets...")
-        
+
         for tcp in self.tcps.values():
             for conn in tcp.values():
                 try:
@@ -169,7 +177,7 @@ class ConferenceServer:
             sock.close()
 
         self.printer("warning", f"Conference {self.conference_id} has been cancelled.")
-        
+
     def quit_conference(self, client_addr):
         """
         Quit conference: Remove a client from the specified ConferenceServer.
@@ -179,7 +187,7 @@ class ConferenceServer:
         all_connections = self.which_type_tcp("all")
 
         for conn_dict in all_connections:
-            if client_id in conn_dict:
+            for client_id in conn_dict:
                 conn = conn_dict[client_id]
                 try:
                     conn.shutdown(socket.SHUT_RDWR)
@@ -188,41 +196,53 @@ class ConferenceServer:
                 finally:
                     conn.close()
                     del conn_dict[client_addr]
-                    self.printer("info", f"Connection with {client_addr} closed and removed.")
-                    
+                    self.printer(
+                        "info", f"Connection with {client_addr} closed and removed."
+                    )
+
         self.clients_info.pop(client_addr)
-        
+
         self.printer("info", f"Client {client_addr} has left the conference.")
 
     def accept_connections(self, sock, sock_type):
         while self.running:
             try:
                 client_conn, client_addr = sock.accept()
-                self.printer("info", f"Connection established with {client_addr[0]}:{client_addr[1]} for", sock_type)
-                
+                self.printer(
+                    "info",
+                    f"Connection established with {client_addr[0]}:{client_addr[1]} for",
+                    sock_type,
+                )
+
                 self.tcps[sock_type][client_addr] = client_conn
                 threading.Thread(
                     target=self.handle_data,
                     args=(client_conn, self.tcps[sock_type], sock_type),
-                    daemon=True
+                    daemon=True,
                 ).start()
 
             except Exception as e:
                 if not self.running:
                     break
-                self.printer("error", f"Error in accept_connection: {str(e)} for", sock_type)
-                
-                
-    def printer(self, state, message, type=''):
+                self.printer(
+                    "error", f"Error in accept_connection: {str(e)} for", sock_type
+                )
+
+    def printer(self, state, message, type=""):
         if state == "info":
-            print(f"[{self.conference_id}] \033[32m{message}\033[0m \033[36m{(type)}\033[0m")
+            print(
+                f"[{self.conference_id}] \033[32m{message}\033[0m \033[36m{(type)}\033[0m"
+            )
         elif state == "error":
-            print(f"[{self.conference_id}] \033[31m{message}\033[0m \033[36m{(type)}\033[0m")
+            print(
+                f"[{self.conference_id}] \033[31m{message}\033[0m \033[36m{(type)}\033[0m"
+            )
         elif state == "warning":
-            print(f"[{self.conference_id}] \033[33m{message}\033[0m \033[36m{(type)}\033[0m")
+            print(
+                f"[{self.conference_id}] \033[33m{message}\033[0m \033[36m{(type)}\033[0m"
+            )
         else:
             print(f"[{self.conference_id}] {message}")
-
 
     def start(self):
 
@@ -230,18 +250,23 @@ class ConferenceServer:
             self.socks[sock_type].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.socks[sock_type].bind((self.server_ip, self.data_ports[sock_type]))
             self.socks[sock_type].listen(5)
-            self.printer("info", f"Listening on {self.server_ip}:{self.data_ports[sock_type]} for", sock_type)
-            
+            self.printer(
+                "info",
+                f"Listening on {self.server_ip}:{self.data_ports[sock_type]} for",
+                sock_type,
+            )
+
         for sock_type in self.types:
             threading.Thread(
-                target=self.accept_connections, 
-                args=(self.socks[sock_type], sock_type), 
-                daemon=True
+                target=self.accept_connections,
+                args=(self.socks[sock_type], sock_type),
+                daemon=True,
             ).start()
 
         # Keep main thread alive
         while self.running:
             time.sleep(1)
+
 
 class MainServer:
     def __init__(self, server_ip, main_port, conf_ports):
@@ -342,7 +367,7 @@ class MainServer:
                     # quit & cancel
                     conf_server.cancel_conference()
                     del self.conference_servers[conference_id]
-                    
+
                 else:
                     # quit
                     conf_server.quit_conference(client_id)
