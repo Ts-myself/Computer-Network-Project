@@ -577,15 +577,16 @@ class ConferenceClient:
             #     time.sleep(CHUNK / RATE)
 
     def create_conference_conn(self):
-        ip_addresses = get_all_ip_addresses()
-        if (len(ip_addresses) == 0):
-            print("No IP address found.")
-            return
-        if (len(ip_addresses) == 1):
-            host = list(ip_addresses.values())[0]
-        else :
-            print("Multiple IP addresses found!!!!")
-            return
+        # ip_addresses = get_all_ip_addresses()
+        # if (len(ip_addresses) == 0):
+        #     print("No IP address found.")
+        #     return
+        # if (len(ip_addresses) == 1):
+        #     host = list(ip_addresses.values())[0]
+        # else :
+        #     print("Multiple IP addresses found!!!!")
+        #     return
+        host = self.client_ip
         print(f"{host}")
 
         self.sock_control.bind((host, SERVER_CONTROL_PORT))

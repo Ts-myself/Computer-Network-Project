@@ -283,6 +283,7 @@ class ConferenceServer:
         # info
         self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Info server started at {self.server_ip}:{self.data_ports['info']}")
+        self.sock_info.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock_info.bind((self.server_ip, self.data_ports["info"]))
         self.sock_info.listen(5)
 
@@ -523,6 +524,8 @@ class MainServer:
                 )
             else:
                 conf_server.mode = "cs"
+                print("-------------------------------------------------------")
+                print(f"{conf_server.clients_info}")
                 conf_server.boardcast_client_info(1)
                 return jsonify(
                     {
