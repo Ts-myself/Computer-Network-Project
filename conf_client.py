@@ -202,6 +202,7 @@ class ConferenceClient:
             )
             if response.status_code == 200:
                 data = response.json()
+                print(f"----------------------{data['mode']}---------------------------")
                 if data['mode'] == "cs":
                     self.conference_id = conference_id
                     self.on_meeting = True
@@ -622,13 +623,19 @@ class ConferenceClient:
         start necessary running task for conference
         """
         try:
+            print(self.server_ip)
             self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
+            print(self.server_ip)
             self.sock_info.connect((SERVER_IP, SERVER_INFO_PORT))
+            print(self.server_ip)
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
+            print(self.server_ip)
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
+            print(self.server_ip)
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
+            print(self.server_ip)
             self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
-
+            print(self.server_ip)
             # Start control receiving thread
             threading.Thread(target=self.recv_control).start()
 

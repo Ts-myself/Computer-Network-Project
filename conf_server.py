@@ -484,7 +484,7 @@ class MainServer:
                         "clients": conf_server.clients_info,
                     }
                 )
-            elif conf_server.mode == "p2p" and len(client_goal_ip) == 0:
+            elif conf_server.mode == "p2p" and len(client_goal_ip) == 1:
                 return jsonify(
                     {
                         "status": "success",
