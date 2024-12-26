@@ -121,8 +121,9 @@ class ConferenceServer:
                     )
                     screen_data = self.receive_object(reader, screen_length)
                     for client_conn in self.tcps[data_type].values():
-                        client_conn.send(header)
-                        client_conn.send(screen_data)
+                        if client_conn != reader:  # Don't send back to the sender
+                            client_conn.send(header)
+                            client_conn.send(screen_data)
             elif data_type == "camera":
                 while self.running:
                     header = self.receive_object(reader, HEADER_LENGTH)
@@ -133,8 +134,9 @@ class ConferenceServer:
                     )
                     data = self.receive_object(reader, camera_length)
                     for client_conn in self.tcps[data_type].values():
-                        client_conn.send(header)
-                        client_conn.send(data)
+                        if client_conn != reader:  # Don't send back to the sender
+                            client_conn.send(header)
+                            client_conn.send(data)
             else:
                 self.printer("warning", f"Unknown data type: {data_type}")
         except Exception as e:
@@ -398,5 +400,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_WYT, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()

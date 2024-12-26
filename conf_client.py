@@ -24,7 +24,7 @@ import time
 import uuid
 
 
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_WYT
 
 SERVER_PORT = 8888
 
@@ -284,11 +284,22 @@ class ConferenceClient:
                     _, img_encode = cv2.imencode(
                         ".jpg", img_np, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
                     )
-                    self.send_object(img_encode.tobytes(), self.sock_screen)
-                    time.sleep(self.screen_sleep_time)
-                    self.screen_sleep_time -= SCREEN_SLEEP_DECREASE
-                    if self.screen_sleep_time < 0:
-                        self.screen_sleep_time = 0
+                    img_bytes = img_encode.tobytes()
+                    self.send_object(img_bytes, self.sock_screen)
+                    if self.is_screen_streaming:
+                        screen_data = img_bytes
+                        if screen_data is None:
+                            continue
+                        frame = cv2.imdecode(
+                            np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR
+                        )
+                        if frame is None:
+                            continue
+                        _, buffer = cv2.imencode(".jpg", frame)
+                        frame_base64 = base64.b64encode(buffer).decode("utf-8")
+                        self.current_screen_frame = frame_base64
+                        self.current_screen_data["client_ip"] = struct.unpack(">4s", self.ip)[0]
+                        self.current_screen_data["id"] = struct.unpack(">16s", self.id)[0]
         except Exception as e:
             print(f"[Error] Failed to send screen data: {str(e)}")
 
@@ -302,17 +313,11 @@ class ConferenceClient:
                 screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
                     header
                 )
-                # print(
-                #     f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
-                # )
+                print(
+                    f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
+                )
 
-                now_time = time.time()
-                time_gap = now_time - screen_time
-                if (
-                    time_gap > SCREEN_TIME_MAX_GAP
-                    and now_time - self.last_control_screen_time > 1
-                ):
-                    self.send_control(1, now_time)
+                
                 screen_data = self.receive_object(self.sock_screen, screen_length)
                 if screen_data is None:
                     continue
@@ -344,11 +349,23 @@ class ConferenceClient:
                 _, frame_encode = cv2.imencode(
                     ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
                 )
-                self.send_object(frame_encode.tobytes(), self.sock_camera)
-                time.sleep(self.camera_sleep_time)
-                self.camera_sleep_time -= CAMERA_SLEEP_DECREASE
-                if self.camera_sleep_time < 0:
-                    self.camera_sleep_time = 0
+                frame_bytes = frame_encode.tobytes()
+                self.send_object(frame_bytes, self.sock_camera)
+                if self.is_camera_streaming:
+                    camera_data = frame_bytes
+                    if camera_data is None:
+                        continue
+                    frame = cv2.imdecode(
+                        np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR
+                    )
+                    if frame is None:
+                        continue
+                    _, buffer = cv2.imencode(".jpg", frame)
+                    frame_base64 = base64.b64encode(buffer).decode("utf-8")
+                    self.current_camera_frame = frame_base64
+                    self.current_camera_data["client_ip"] = struct.unpack(">4s", self.ip)[0]
+                    self.current_camera_data["id"] = struct.unpack(">16s", self.id)[0]
+                
         except Exception as e:
             print(f"[Error] Failed to send camera data: {str(e)}")
 
@@ -363,23 +380,9 @@ class ConferenceClient:
                 camera_length, camera_time, camera_id, camera_ip = self.unpack_object(
                     header
                 )
-                # print(
-                #     f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
-                # )
-
-                now_time = time.time()
-                time_gap = now_time - camera_time
-                if (
-                    time_gap > CAMERA_TIME_MAX_GAP
-                    and now_time - self.last_control_camera_time > 1
-                ):
-                    # 2 slow camera send
-                    self.send_control(2, now_time)
-                    print("time gap: ", time_gap)
-                    print(
-                        "now time -last control time: ",
-                        now_time - self.last_control_camera_time,
-                    )
+                print(
+                    f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
+                )
                 camera_data = self.receive_object(self.sock_camera, camera_length)
                 if camera_data is None:
                     continue
@@ -674,7 +677,7 @@ class ConferenceClient:
         start client server
         """
         self.app.run(
-            host=SERVER_IP,
+            host='localhost',
             port=FRONT_PORT,
             debug=False,
             threaded=True,
