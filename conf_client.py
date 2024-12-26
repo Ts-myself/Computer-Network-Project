@@ -24,16 +24,9 @@ import time
 import uuid
 
 
-SERVER_IP = SERVER_IP_PUBLIC_WYT
+SERVER_IP = SERVER_IP_PUBLIC_TJL
 
 SERVER_PORT = 8888
-
-SERVER_INFO_PORT = 8889
-SERVER_CONTROL_PORT = 8890
-SERVER_MSG_PORT = 8891
-SERVER_AUDIO_PORT = 8892
-SERVER_SCREEN_PORT = 8893
-SERVER_CAMERA_PORT = 8894
 
 FRONT_PORT = 9999
 
@@ -102,6 +95,16 @@ class ConferenceClient:
         self.app = Flask(__name__)
         self.setup_routes()
 
+        # 添加端口存储
+        self.server_ports = {
+            "info": None,
+            "control": None,
+            "msg": None,
+            "audio": None,
+            "camera": None,
+            "screen": None,
+        }
+
     def create_conference(self):
         """
         create a conference: send create-conference request to server and obtain necessary data to
@@ -116,6 +119,7 @@ class ConferenceClient:
             if response.status_code == 200:
                 data = response.json()
                 self.conference_id = data["conference_id"]
+                self.server_ports = data["ports"]  # 保存分配的端口
                 print(f"[Success] Created conference with ID: {self.conference_id}")
                 self.join_conference(self.conference_id)
             else:
@@ -137,10 +141,12 @@ class ConferenceClient:
                 f"{self.server_addr}/join_conference/{conference_id}", json=data
             )
             if response.status_code == 200:
+                data = response.json()
                 self.conference_id = conference_id
                 self.on_meeting = True
+                self.server_ports = data["ports"]  # 保存分配的端口
                 print(f"[Success] Joined conference {conference_id}")
-                self.client_info = response.json()["clients"]
+                self.client_info = data["clients"]
                 self.start_conference()
             else:
                 print("[Error] Failed to join conference")
@@ -298,8 +304,12 @@ class ConferenceClient:
                         _, buffer = cv2.imencode(".jpg", frame)
                         frame_base64 = base64.b64encode(buffer).decode("utf-8")
                         self.current_screen_frame = frame_base64
-                        self.current_screen_data["client_ip"] = struct.unpack(">4s", self.ip)[0]
-                        self.current_screen_data["id"] = struct.unpack(">16s", self.id)[0]
+                        self.current_screen_data["client_ip"] = struct.unpack(
+                            ">4s", self.ip
+                        )[0]
+                        self.current_screen_data["id"] = struct.unpack(">16s", self.id)[
+                            0
+                        ]
         except Exception as e:
             print(f"[Error] Failed to send screen data: {str(e)}")
 
@@ -317,7 +327,6 @@ class ConferenceClient:
                     f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
                 )
 
-                
                 screen_data = self.receive_object(self.sock_screen, screen_length)
                 if screen_data is None:
                     continue
@@ -363,9 +372,11 @@ class ConferenceClient:
                     _, buffer = cv2.imencode(".jpg", frame)
                     frame_base64 = base64.b64encode(buffer).decode("utf-8")
                     self.current_camera_frame = frame_base64
-                    self.current_camera_data["client_ip"] = struct.unpack(">4s", self.ip)[0]
+                    self.current_camera_data["client_ip"] = struct.unpack(
+                        ">4s", self.ip
+                    )[0]
                     self.current_camera_data["id"] = struct.unpack(">16s", self.id)[0]
-                
+
         except Exception as e:
             print(f"[Error] Failed to send camera data: {str(e)}")
 
@@ -481,12 +492,12 @@ class ConferenceClient:
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
-            self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
-            self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
-            self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
-            self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
-            self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
-            self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
+            self.sock_control.connect((self.server_ip, self.server_ports["control"]))
+            self.sock_info.connect((self.server_ip, self.server_ports["info"]))
+            self.sock_msg.connect((self.server_ip, self.server_ports["msg"]))
+            self.sock_camera.connect((self.server_ip, self.server_ports["camera"]))
+            self.sock_screen.connect((self.server_ip, self.server_ports["screen"]))
+            self.sock_audio.connect((self.server_ip, self.server_ports["audio"]))
 
             # Start control thread
             threading.Thread(target=self.recv_control).start()
@@ -505,7 +516,7 @@ class ConferenceClient:
             # Start camera thread
             threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
-            
+
             # Start screen thread
             threading.Thread(target=self.send_screen).start()
             threading.Thread(target=self.recv_screen).start()
@@ -677,7 +688,7 @@ class ConferenceClient:
         start client server
         """
         self.app.run(
-            host='localhost',
+            host="localhost",
             port=FRONT_PORT,
             debug=False,
             threaded=True,
@@ -686,7 +697,13 @@ class ConferenceClient:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Lichi Conference Client")
-    parser.add_argument("-p", "--port", type=int, default=9999, help="Port to run the web on (default: 9999)",)
+    parser.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        default=9999,
+        help="Port to run the web on (default: 9999)",
+    )
     args = parser.parse_args()
 
     FRONT_PORT = args.port

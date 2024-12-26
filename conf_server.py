@@ -271,7 +271,7 @@ class ConferenceServer:
 
 
 class MainServer:
-    def __init__(self, server_ip, main_port, conf_ports):
+    def __init__(self, server_ip, main_port):
         """
         Initialize MainServer instance.
         :param server_ip: The IP address where the server will run.
@@ -279,9 +279,9 @@ class MainServer:
         """
         self.server_ip = server_ip
         self.server_port = main_port
-        self.conf_ports = conf_ports
         self.main_server = None
         self.conference_servers = {}  # dict conference_id: ConferenceServer
+        self.port_manager = DynamicPort()  # 新增端口管理器
         self.app = Flask(__name__)
         self.setup_routes()
 
@@ -295,23 +295,34 @@ class MainServer:
     def setup_routes(self):
         @self.app.route("/create_conference", methods=["POST"])
         def handle_creat_conference():
-            """
-            Create a new conference: Initialize and start a new ConferenceServer instance.
-            :return: A dictionary with {status, message, conference_id, ports}.
-            """
             data = request.get_json()
             client_ip = data["client_ip"]
             client_id = data["id"]
             conf_id = self.generate_conference_id()
+
+            # 分配新的端口
+            try:
+                conf_ports = self.port_manager.allocate_ports()
+            except RuntimeError:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "No available ports for new conference",
+                        }
+                    ),
+                    503,
+                )
+
             self.conference_servers[conf_id] = ConferenceServer(
-                conf_id, self.conf_ports, client_id, self.server_ip
+                conf_id, conf_ports, client_id, self.server_ip
             )
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             return jsonify(
                 {
                     "status": "success",
                     "conference_id": conf_id,
-                    "ports": self.conf_ports,
+                    "ports": conf_ports,
                 }
             )
 
@@ -353,23 +364,22 @@ class MainServer:
                     "status": "success",
                     "conference_id": conference_id,
                     "clients": conf_server.clients_info,
+                    "ports": conf_server.data_ports,
                 }
             )
 
         @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
         def handle_quit_conference(conference_id):
-            """
-            Quit conference: Remove a client from the specified ConferenceServer. If the client is the host, cancel the conference.
-            """
             if conference_id in self.conference_servers:
                 client_id = request.get_json()["id"]
                 conf_server = self.conference_servers[conference_id]
 
                 if client_id == conf_server.host_id:
+                    # 释放用的端口
+                    self.port_manager.release_ports(conf_server.data_ports)
                     # quit & cancel
                     conf_server.cancel_conference()
                     del self.conference_servers[conference_id]
-
                 else:
                     # quit
                     conf_server.quit_conference(client_id)
@@ -398,7 +408,34 @@ class MainServer:
         self.app.run(host=self.server_ip, port=self.server_port)
 
 
-if __name__ == "__main__":
+class DynamicPort:
+    def __init__(self, start_port=8890, end_port=9590):
+        self.start_port = start_port
+        self.end_port = end_port
+        self.used_ports = set()
 
-    server = MainServer(SERVER_IP_PUBLIC_WYT, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    def allocate_ports(self):
+        """Allocate 6 consecutive ports for a conference"""
+        for base_port in range(self.start_port, self.end_port - 5, 6):
+            ports = set(range(base_port, base_port + 6))
+            if not ports & self.used_ports:  # 如果没有交集
+                self.used_ports.update(ports)
+                return {
+                    "info": base_port,
+                    "control": base_port + 1,
+                    "msg": base_port + 2,
+                    "audio": base_port + 3,
+                    "camera": base_port + 4,
+                    "screen": base_port + 5,
+                }
+        raise RuntimeError("No available ports")
+
+    def release_ports(self, ports):
+        """Release the ports when conference ends"""
+        for port in ports.values():
+            self.used_ports.remove(port)
+
+
+if __name__ == "__main__":
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT)
     server.start()
