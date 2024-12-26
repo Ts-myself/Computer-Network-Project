@@ -24,7 +24,7 @@ import time
 import uuid
 
 
-SERVER_IP = SERVER_IP_PUBLIC_TJL
+SERVER_IP = SERVER_IP_LOCAL
 
 SERVER_PORT = 8888
 
@@ -302,9 +302,9 @@ class ConferenceClient:
                 screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
                     header
                 )
-                print(
-                    f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
-                )
+                # print(
+                #     f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
+                # )
 
                 now_time = time.time()
                 time_gap = now_time - screen_time
@@ -363,9 +363,9 @@ class ConferenceClient:
                 camera_length, camera_time, camera_id, camera_ip = self.unpack_object(
                     header
                 )
-                print(
-                    f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
-                )
+                # print(
+                #     f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
+                # )
 
                 now_time = time.time()
                 time_gap = now_time - camera_time

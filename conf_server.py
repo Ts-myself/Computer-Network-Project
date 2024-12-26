@@ -45,7 +45,7 @@ class ConferenceServer:
        
         self.mode = "Client-Server"  # Default mode
         self.running = True
-        self.printer("info", f"Conference {self.conference_id} is created by {self.host_ip}")
+        self.printer("info", f"Conference {self.conference_id} is created by {self.host_id}")
         
     def receive_object(self, connection, length):
         object = b""
@@ -373,5 +373,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
