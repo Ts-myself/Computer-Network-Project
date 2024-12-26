@@ -205,6 +205,11 @@ class ConferenceClient:
                 if data:
                     info_data = json.loads(data.decode())
                     mode = info_data['mode']
+                    print(f"mode: {mode}")
+                    print("--------------------------------------------------")
+                    print("------------------------------------------------")
+                    print("------------------------------------------------")
+                    print("------------------------------------------------")
                     if mode == "p2p2cs":
                         self.server_ip = SERVER_IP
                         self.mode = "cs"
@@ -322,7 +327,7 @@ class ConferenceClient:
                     )
                     img_bytes = img_encode.tobytes()
                     self.send_object(img_bytes, self.sock_screen)
-                    print(f"Sent screen data: {len(img_bytes)}")
+                    # print(f"Sent screen data: {len(img_bytes)}")
                     if self.is_screen_streaming:
                         screen_data = img_bytes
                         if screen_data is None:
@@ -350,13 +355,13 @@ class ConferenceClient:
                 screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
                     header
                 )
-                print(
-                    f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
-                )
+                # print(
+                #     f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
+                # )
 
                 
                 screen_data = self.receive_object(self.sock_screen, screen_length)
-                print(f"Received screen data: {len(screen_data)}")  
+                # print(f"Received screen data: {len(screen_data)}")  
                 if screen_data is None:
                     continue
                 frame = cv2.imdecode(
@@ -370,7 +375,7 @@ class ConferenceClient:
                     self.current_screen_frame = frame_base64
                     self.current_screen_data["client_ip"] = screen_ip
                     self.current_screen_data["id"] = screen_id
-                    print("11111111111111111111111111111111111111111111111")
+                    # print("11111111111111111111111111111111111111111111111")
 
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
@@ -390,7 +395,7 @@ class ConferenceClient:
                 )
                 frame_bytes = frame_encode.tobytes()
                 self.send_object(frame_bytes, self.sock_camera)
-                print(f"Sent camera data: {len(frame_bytes)}")
+                # print(f"Sent camera data: {len(frame_bytes)}")
                 if self.is_camera_streaming:
                     camera_data = frame_bytes
                     if camera_data is None:
@@ -420,11 +425,11 @@ class ConferenceClient:
                 camera_length, camera_time, camera_id, camera_ip = self.unpack_object(
                     header
                 )
-                print(
-                    f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
-                )
+                # print(
+                #     f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
+                # )
                 camera_data = self.receive_object(self.sock_camera, camera_length)
-                print(f"Received camera data: {len(camera_data)}")
+                # print(f"Received camera data: {len(camera_data)}")
                 if camera_data is None:
                     continue
                 frame = cv2.imdecode(
@@ -438,7 +443,7 @@ class ConferenceClient:
                     self.current_camera_frame = frame_base64
                     self.current_camera_data["client_ip"] = camera_ip
                     self.current_camera_data["id"] = camera_id
-                    print("---------------------------------------------")
+                    # print("---------------------------------------------")
 
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
@@ -656,8 +661,8 @@ class ConferenceClient:
 
         self.is_streaming = True
     
-        def reconnect(self):
-            self.on_meeting = False
+    def reconnect(self):
+        self.on_meeting = False
         self.sock_control.close()
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg.close()
@@ -876,9 +881,9 @@ class ConferenceClient:
                         screen_ip = socket.inet_ntoa(
                             self.current_screen_data["client_ip"]
                         )
-                        print(f"screen_id: {screen_id}")
-                        print(f"screen_ip: {screen_ip}")
-                        print(len(self.current_screen_frame))
+                        # print(f"screen_id: {screen_id}")
+                        # print(f"screen_ip: {screen_ip}")
+                        # print(len(self.current_screen_frame))
                     else:
                         screen_id = None
                         screen_ip = None
