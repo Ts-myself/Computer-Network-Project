@@ -71,7 +71,7 @@ class ConferenceClient:
         self.sock_temp.connect(("8.8.8.8", 80))
         self.client_ip = self.sock_temp.getsockname()[0]
         self.sock_temp.close()
-        
+
         self.username = "User"
         self.on_meeting = False  # status
         self.conns = (
@@ -82,6 +82,7 @@ class ConferenceClient:
         self.conference_id = None
         self.participant_num = 1
         # struct pack uuid and ip
+        self.mode = "p2p"
         self.id = struct.pack('>16s', self.unique_id)
         self.ip = struct.pack('>4s', socket.inet_aton(self.client_ip))
         # self.conference_info = None  # you may need to save and update some conference_info regularly
@@ -211,9 +212,11 @@ class ConferenceClient:
                     self.conference_id = conference_id
                     self.on_meeting = True
                     self.server_ip = SERVER_IP
+                    self.mode = "cs"
                     print(f"[Success] Joined conference {conference_id}")
                     self.start_conference()
                 elif data['mode'] == "p2p":
+                    self.mode = "p2p"
                     self.conference_id = conference_id
                     self.on_meeting = True
                     print(f"[Success] Joined conference {conference_id}")
@@ -221,6 +224,7 @@ class ConferenceClient:
                     print(f"{self.server_ip}--------------------------------------------")
                     self.start_conference()
                 elif data['mode'] == "p2p2cs":
+                    self.mode = "cs"
                     self.conference_id = conference_id
                     self.on_meeting = True
                     print(f"[Success] Joined conference {conference_id}")
@@ -281,13 +285,16 @@ class ConferenceClient:
                     mode = info_data['mode']
                     if mode == "p2p2cs":
                         self.server_ip = SERVER_IP
+                        self.mode = "cs"
                         self.reconnect()
                     elif mode == "cs2p2p":
                         rest_ip1 = info_data['clients'].keys()[0]
                         rest_ip2 = info_data['clients'].keys()[1]
                         if rest_ip1 == self.client_ip :
+                            self.mode = "p2p"
                             threading.Thread(target=self.p2p_quit()).start()
                         elif rest_ip2 == self.client_ip:
+                            self.mode = "p2p"
                             self.server_ip = info_data['clients'].values()[0]
                             self.reconnect()
                     elif mode == "p2pquit":
@@ -451,7 +458,7 @@ class ConferenceClient:
         try:
             while self.on_meeting:
                 header = self.receive_object(self.sock_camera, HEADER_LENGTH)
-                print('Successfully receive camera header')
+                # print('Successfully receive camera header')
                 if not header:
                     break
                 camera_length, camera_time, camera_id, camera_ip = self.unpack_object(header)
@@ -461,7 +468,7 @@ class ConferenceClient:
                     # 2 slow camera send
                     self.send_control(2, now_time)
                 camera_data = self.receive_object(self.sock_camera, camera_length)
-                print('Successfully receive camera data')
+                # print('Successfully receive camera data')
                 frame = cv2.imdecode(np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR)
                 _, buffer = cv2.imencode(".jpg", frame)
                 # show
@@ -620,8 +627,8 @@ class ConferenceClient:
         threading.Thread(target=self.recv_msg).start()
         threading.Thread(target=self.recv_camera).start()
         threading.Thread(target=self.recv_screen).start()
-        threading.Thread(target=self.audio_receiver).start()
-        threading.Thread(target=self.audio_mixer).start()
+        # threading.Thread(target=self.audio_receiver).start()
+        # threading.Thread(target=self.audio_mixer).start()
         
 
         self.is_streaming = True
@@ -706,8 +713,8 @@ class ConferenceClient:
             threading.Thread(target=self.recv_msg).start()
             threading.Thread(target=self.recv_camera).start()
             threading.Thread(target=self.recv_screen).start()
-            threading.Thread(target=self.audio_receiver).start()
-            threading.Thread(target=self.audio_mixer).start()
+            # threading.Thread(target=self.audio_receiver).start()
+            # threading.Thread(target=self.audio_mixer).start()
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
             self.on_meeting = False
@@ -745,7 +752,7 @@ class ConferenceClient:
             # Start audio thread
             # threading.Thread(target=self.start_audio).start()
             # Strat camera thread
-            threading.Thread(target=self.send_camera).start()
+            # threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
             # threading.Thread(target=self.send_screen).start()
             # threading.Thread(target=self.recv_screen).start()
@@ -878,7 +885,13 @@ class ConferenceClient:
                     "username": self.username,
                     "timestamp": getCurrentTime(),
                 }
+                # print("-----------------------------------------------------------")
+                if self.mode == "p2p":
+                    print(f"[INFO] Self data: {msg_json}")
+                    self.new_msgs.append(msg_json)
                 self.sock_msg.send(json.dumps(msg_json).encode())
+                # if self.mode == "p2p":
+                #     self.sock_msg.send(json.dumps(msg_json).encode())
                 print(f"[INFO] Send message: {msg}")
                 return jsonify({"status": "success"})
             except Exception as e:
