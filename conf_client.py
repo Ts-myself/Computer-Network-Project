@@ -141,6 +141,7 @@ class ConferenceClient:
             )
             if response.status_code == 200:
                 data = response.json()
+                self.client_info = data['client_info']
                 if data['mode'] == "cs":
                     self.conference_id = conference_id
                     self.on_meeting = True

@@ -465,7 +465,7 @@ class MainServer:
                         "status": "success",
                         "mode": conf_server.mode,
                         "conference_id": conference_id,
-                        "clients": conf_server.clients_info,
+                        "client_info": conf_server.clients_info,
                     }
                 )
             elif conf_server.mode == "p2p" and len(client_goal_ip) == 1:
@@ -476,6 +476,7 @@ class MainServer:
                         "mode": conf_server.mode,
                         "conference_id": conference_id,
                         "clients": client_goal_ip[0],
+                        "client_info": conf_server.clients_info,
                     }
                 )
             else:
@@ -487,6 +488,7 @@ class MainServer:
                         "mode": "p2p2cs",
                         "conference_id": conference_id,
                         "clients": client_goal_ip[0],
+                        "client_info": conf_server.clients_info,
                     }
                 )
 
