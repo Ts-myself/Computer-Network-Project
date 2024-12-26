@@ -292,6 +292,7 @@ class ConferenceClient:
                     )
                     img_bytes = img_encode.tobytes()
                     self.send_object(img_bytes, self.sock_screen)
+                    
                     if self.is_screen_streaming:
                         screen_data = img_bytes
                         if screen_data is None:
@@ -679,7 +680,6 @@ class ConferenceClient:
                         },
                     }
                     yield f"data: {json.dumps(streams_data)}\n\n"
-                    time.sleep(1 / 30)  # 限制帧率为30fps
 
             return Response(generate(), mimetype="text/event-stream")
 
