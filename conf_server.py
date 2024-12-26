@@ -10,7 +10,7 @@ import json
 
 
 class ConferenceServer:
-    def __init__(self, conference_id, data_ports, host_ip, server_ip):
+    def __init__(self, conference_id, data_ports, host_id, server_ip):
         """
         Initialize a ConferenceServer instance.
         :param conference_id: Unique identifier for the conference.
@@ -18,13 +18,11 @@ class ConferenceServer:
         """
         self.server_ip = server_ip
         self.conference_id = conference_id
-        self.data_ports = data_ports 
-        self.host_ip = host_ip
+        self.data_ports = data_ports
+        self.host_id = host_id
 
         self.clients_info = {}
 
-        self.tcps_camera= {}
-        
         self.types = ["info", "control", "msg", "audio", "camera", "screen"]
 
         self.tcps = {
@@ -48,7 +46,6 @@ class ConferenceServer:
         self.mode = "Client-Server"  # Default mode
         self.running = True
         self.printer("info", f"Conference {self.conference_id} is created by {self.host_ip}")
-
         
     def receive_object(self, connection, length):
         object = b""
@@ -176,14 +173,14 @@ class ConferenceServer:
     def quit_conference(self, client_addr):
         """
         Quit conference: Remove a client from the specified ConferenceServer.
-        :param client_ip: Unique identifier of the client leaving the conference.
+        :param client_id: Unique identifier of the client leaving the conference.
         :return: Dictionary with the result (success or error).
         """
         all_connections = self.which_type_tcp("all")
-        
+
         for conn_dict in all_connections:
-            if client_addr in conn_dict:
-                conn = conn_dict[client_addr]
+            if client_id in conn_dict:
+                conn = conn_dict[client_id]
                 try:
                     conn.shutdown(socket.SHUT_RDWR)
                 except OSError:
@@ -275,10 +272,12 @@ class MainServer:
             Create a new conference: Initialize and start a new ConferenceServer instance.
             :return: A dictionary with {status, message, conference_id, ports}.
             """
-            client_ip = request.remote_addr
+            data = request.get_json()
+            client_ip = data["client_ip"]
+            client_id = data["id"]
             conf_id = self.generate_conference_id()
             self.conference_servers[conf_id] = ConferenceServer(
-                conf_id, self.conf_ports, client_ip, self.server_ip
+                conf_id, self.conf_ports, client_id, self.server_ip
             )
             threading.Thread(target=self.conference_servers[conf_id].start).start()
             return jsonify(
@@ -300,6 +299,7 @@ class MainServer:
             data = request.get_json()
             client_username = data["username"]
             client_ip = request.remote_addr
+            client_id = data["id"]
 
             if conference_id not in self.conference_servers:
                 return (
@@ -307,14 +307,14 @@ class MainServer:
                     404,
                 )
 
-            if client_ip in self.conference_servers[conference_id].clients_info.keys():
+            if client_id in self.conference_servers[conference_id].clients_info.keys():
                 return (
                     jsonify({"status": "error", "message": "Client already joined"}),
                     400,
                 )
 
             conf_server = self.conference_servers[conference_id]
-            conf_server.clients_info[client_ip] = {
+            conf_server.clients_info[client_id] = {
                 "username": client_username,
                 "join_time": getCurrentTime(),
             }
@@ -332,28 +332,37 @@ class MainServer:
         @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
         def handle_quit_conference(conference_id):
             """
-            Quit conference: Remove a client from the specified ConferenceServer.
-                             If the client is the host, cancel the conference.
+            Quit conference: Remove a client from the specified ConferenceServer. If the client is the host, cancel the conference.
             """
             if conference_id in self.conference_servers:
-                client_ip = request.remote_addr
+                client_id = request.get_json()["id"]
                 conf_server = self.conference_servers[conference_id]
-                
-                if client_ip == conf_server.host_ip:
+
+                if client_id == conf_server.host_id:
                     # quit & cancel
                     conf_server.cancel_conference()
                     del self.conference_servers[conference_id]
                     
                 else:
                     # quit
-                    conf_server.quit_conference(client_ip)
-                    
+                    conf_server.quit_conference(client_id)
+
+                conf_server.boardcast_client_info()
+
                 return (
-                    jsonify({"status": "success", "message": "Client has left the conference"}),
+                    jsonify(
+                        {
+                            "status": "success",
+                            "message": "Client has left the conference",
+                        }
+                    ),
                     200,
                 )
             else:
-                return jsonify({"status": "error", "message": "Conference not found"}), 404
+                return (
+                    jsonify({"status": "error", "message": "Conference not found"}),
+                    404,
+                )
 
     def start(self):
         """
@@ -364,5 +373,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()

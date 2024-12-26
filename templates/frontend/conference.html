@@ -255,6 +255,30 @@
         let participants = []; // 用于存储参与者列表
         let participant_num = 0;
         let recv_msgs = []; // 用于存储接收到的消息
+        let lastClientInfo = null; // 存储上一次的 client_info
+        const lastValidFrames = {
+            camera: {},
+            screen: {}
+        };
+        const time_threshold = 300;
+
+        // 添加比较函数
+        function isClientInfoEqual(oldInfo, newInfo) {
+            if (!oldInfo || !newInfo) return false;
+
+            const oldKeys = Object.keys(oldInfo);
+            const newKeys = Object.keys(newInfo);
+
+            if (oldKeys.length !== newKeys.length) return false;
+
+            return oldKeys.every(key => {
+                const oldClient = oldInfo[key];
+                const newClient = newInfo[key];
+                return oldClient && newClient &&
+                    oldClient.username === newClient.username &&
+                    oldClient.join_time === newClient.join_time;
+            });
+        }
 
         function initUserInfo() {
             fetch('/api/client_info')
@@ -275,14 +299,19 @@
             const data = JSON.parse(event.data);
             // 将client_info对象转换为数组格式
             if (data.client_info && typeof data.client_info === 'object') {
-                participants = Object.entries(data.client_info).map(([client_ip, info]) => ({
-                    client_ip,
-                    username: info.username,
-                    join_time: info.join_time
-                }));
-                participant_num = data.participant_num;
-                document.getElementById('conference-id').textContent = data.conference_id;
-                updateVideoGrid();
+                // 检查 client_info 是否有变化
+                if (!isClientInfoEqual(lastClientInfo, data.client_info)) {
+                    participants = Object.entries(data.client_info).map(([client_id, info]) => ({
+                        client_id,
+                        username: info.username,
+                        join_time: info.join_time
+                    }));
+                    participant_num = data.participant_num;
+                    document.getElementById('conference-id').textContent = data.conference_id;
+                    updateVideoGrid();
+                    // 更新 lastClientInfo
+                    lastClientInfo = JSON.parse(JSON.stringify(data.client_info));
+                }
             } else {
                 console.error('Invalid client_info format:', data.client_info);
             }
@@ -329,7 +358,7 @@
                 // 创建屏幕共享视频元素
                 const screenVideo = document.createElement('img');
                 screenVideo.className = 'screen-display';
-                screenVideo.id = `screen${participant.client_ip}`;
+                screenVideo.id = `screen${participant.client_id}`;
                 screenVideo.src = '/static/screen_off.png';  // 设置默认图片
 
                 const cameraContainer = document.createElement('div');
@@ -338,8 +367,8 @@
                 // 创建摄像头视频元素
                 const cameraVideo = document.createElement('img');
                 cameraVideo.className = 'user-camera';
-                cameraVideo.id = `camera${participant.client_ip}`;
-                cameraVideo.src = '/static/camera_off.png';  // 设置默认图片
+                cameraVideo.id = `camera${participant.client_id}`;
+                cameraVideo.src = '/static/camera_off.png';  // 设置��认图片
 
                 cameraContainer.appendChild(cameraVideo);
                 videoContainer.appendChild(screenVideo);
@@ -374,26 +403,49 @@
 
             eventSource.onmessage = function (event) {
                 const data = JSON.parse(event.data);
-                console.log('Received video stream data:', data); // 添加调试信息
-                console.log(participants);
-                // 更新所有视频元素
-                participants.forEach(participant => {
-                    const cameraElement = document.getElementById(`camera${participant.client_ip}`);
-                    const screenElement = document.getElementById(`screen${participant.client_ip}`);
+                const currentTime = Date.now();
 
+                participants.forEach(participant => {
+                    const cameraElement = document.getElementById(`camera${participant.client_id}`);
+                    const screenElement = document.getElementById(`screen${participant.client_id}`);
+
+                    // Handle camera frames
                     if (cameraElement) {
-                        if (data.camera && (data.camera.client_ip === participant.client_ip || true) && data.camera.frame) {
+                        if (data.camera && data.camera.id === participant.client_id && data.camera.frame) {
+                            // Update last valid frame and timestamp
+                            lastValidFrames.camera[participant.client_id] = {
+                                frame: data.camera.frame,
+                                timestamp: currentTime
+                            };
                             cameraElement.src = `data:image/jpeg;base64,${data.camera.frame}`;
                         } else {
-                            cameraElement.src = '/static/camera_off.png';
+                            // Check if we have a valid recent frame
+                            const lastCamera = lastValidFrames.camera[participant.client_id];
+                            if (lastCamera && currentTime - lastCamera.timestamp < time_threshold) {
+                                cameraElement.src = `data:image/jpeg;base64,${lastCamera.frame}`;
+                            } else {
+                                cameraElement.src = '/static/camera_off.png';
+                            }
                         }
                     }
 
+                    // Handle screen sharing frames
                     if (screenElement) {
-                        if (data.screen && (data.screen.client_ip === participant.client_ip || true) && data.screen.frame) {
+                        if (data.screen && data.screen.id === participant.client_id && data.screen.frame) {
+                            // Update last valid frame and timestamp
+                            lastValidFrames.screen[participant.client_id] = {
+                                frame: data.screen.frame,
+                                timestamp: currentTime
+                            };
                             screenElement.src = `data:image/jpeg;base64,${data.screen.frame}`;
                         } else {
-                            screenElement.src = '/static/screen_off.png';
+                            // Check if we have a valid recent frame
+                            const lastScreen = lastValidFrames.screen[participant.client_id];
+                            if (lastScreen && currentTime - lastScreen.timestamp < time_threshold) {
+                                screenElement.src = `data:image/jpeg;base64,${lastScreen.frame}`;
+                            } else {
+                                screenElement.src = '/static/screen_off.png';
+                            }
                         }
                     }
                 });

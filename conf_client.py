@@ -24,7 +24,7 @@ import time
 import uuid
 
 
-SERVER_IP = SERVER_IP_LOCAL
+SERVER_IP = SERVER_IP_PUBLIC_TJL
 
 SERVER_PORT = 8888
 
@@ -107,7 +107,12 @@ class ConferenceClient:
         create a conference: send create-conference request to server and obtain necessary data to
         """
         try:
-            response = requests.post(f"{self.server_addr}/create_conference")
+            data = {
+                "username": self.username,
+                "client_ip": self.client_ip,
+                "id": str(uuid.UUID(bytes=self.unique_id)),
+            }
+            response = requests.post(f"{self.server_addr}/create_conference", json=data)
             if response.status_code == 200:
                 data = response.json()
                 self.conference_id = data["conference_id"]
@@ -126,7 +131,7 @@ class ConferenceClient:
             data = {
                 "username": self.username,
                 "client_ip": self.client_ip,
-                "id": str(self.unique_id),
+                "id": str(uuid.UUID(bytes=self.unique_id)),
             }
             response = requests.post(
                 f"{self.server_addr}/join_conference/{conference_id}", json=data
@@ -153,8 +158,9 @@ class ConferenceClient:
         self.on_meeting = False
 
         try:
+            data = {"id": str(uuid.UUID(bytes=self.unique_id))}
             response = requests.post(
-                f"{self.server_addr}/quit_conference/{self.conference_id}"
+                f"{self.server_addr}/quit_conference/{self.conference_id}", json=data
             )
             if response.status_code == 200:
 
@@ -186,11 +192,8 @@ class ConferenceClient:
     def recv_msg(self):
         print("[INFO] Starting message receiving...")
         try:
-            counter = 0
             while self.on_meeting:
                 data = self.sock_msg.recv(BUFFER_SIZE)
-                counter += 1
-                # print(f"message count: {counter}")
                 if data:
                     # Parse the received JSON message
                     msg_data = json.loads(data.decode())
@@ -200,19 +203,24 @@ class ConferenceClient:
             print(f"[Error] Failed to receive message: {str(e)}")
 
     def send_control(self, message, time_stamp):
-        self.last_control_screen_time = time_stamp
-        control_message = message
-        control_message = struct.pack(">I", control_message)
-        control_message += struct.pack(">d", time_stamp)
-        self.sock_control.send(control_message)
+        try:
+            self.last_control_screen_time = time_stamp
+            control_message = message
+            control_message = struct.pack(">I", control_message)
+            control_message += struct.pack(">d", time_stamp)
+            control_message += self.id
+            control_message += self.ip
+            self.sock_control.send(control_message)
+        except Exception as e:
+            print(f"[Error] Failed to send control message: {str(e)}")
 
     def recv_control(self):
         print("[INFO] Starting control receiving...")
         try:
             while self.on_meeting:
-                control_message = self.sock_control.recv(12)
-                message = struct.unpack(">I", control_message[:4])[0]
-                time_stamp = struct.unpack(">d", control_message[4:])[0]
+                # control_message = self.sock_control.recv(12)
+                control_message = self.receive_object(self.sock_control, 32)
+                message, time_stamp, id, ip = self.unpack_object(control_message)
                 print(f"Received control message: {message}")
                 if message == 1:
                     self.screen_sleep_time += SCREEN_SLEEP_INCREASE
@@ -294,6 +302,9 @@ class ConferenceClient:
                 screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
                     header
                 )
+                print(
+                    f"Received screen data: {screen_length}, {screen_time}, {screen_id}, {screen_ip}"
+                )
 
                 now_time = time.time()
                 time_gap = now_time - screen_time
@@ -303,9 +314,13 @@ class ConferenceClient:
                 ):
                     self.send_control(1, now_time)
                 screen_data = self.receive_object(self.sock_screen, screen_length)
+                if screen_data is None:
+                    continue
                 frame = cv2.imdecode(
                     np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR
                 )
+                if frame is None:
+                    continue
                 _, buffer = cv2.imencode(".jpg", frame)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 if self.is_screen_streaming:
@@ -325,6 +340,7 @@ class ConferenceClient:
             cap = initialize_camera()
             while self.on_meeting:
                 ret, frame = cap.read()
+                frame = cv2.resize(frame, (640, 480))
                 _, frame_encode = cv2.imencode(
                     ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 30]
                 )
@@ -347,6 +363,9 @@ class ConferenceClient:
                 camera_length, camera_time, camera_id, camera_ip = self.unpack_object(
                     header
                 )
+                print(
+                    f"Received camera data: {camera_length}, {camera_time}, {camera_id}, {camera_ip}"
+                )
 
                 now_time = time.time()
                 time_gap = now_time - camera_time
@@ -356,15 +375,20 @@ class ConferenceClient:
                 ):
                     # 2 slow camera send
                     self.send_control(2, now_time)
+                    print("time gap: ", time_gap)
+                    print(
+                        "now time -last control time: ",
+                        now_time - self.last_control_camera_time,
+                    )
                 camera_data = self.receive_object(self.sock_camera, camera_length)
-                # print("Successfully receive camera data")
+                if camera_data is None:
+                    continue
                 frame = cv2.imdecode(
                     np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR
                 )
+                if frame is None:
+                    continue
                 _, buffer = cv2.imencode(".jpg", frame)
-                # show
-                # cv2.imshow('frame', frame)
-                # cv2.waitKey(1)
                 frame_base64 = base64.b64encode(buffer).decode("utf-8")
                 if self.is_camera_streaming:
                     self.current_camera_frame = frame_base64
@@ -526,7 +550,7 @@ class ConferenceClient:
                 while True:
                     infos = {
                         "client_ip": self.client_ip,
-                        "id": str(self.unique_id),
+                        "id": str(uuid.UUID(bytes=self.unique_id)),
                         "username": self.username,
                         "on_meeting": self.on_meeting,
                         "conference_id": self.conference_id,
@@ -586,7 +610,7 @@ class ConferenceClient:
                 msg_json = {
                     "msg": msg,
                     "ip": self.client_ip,
-                    "id": str(self.unique_id),
+                    "id": str(uuid.UUID(bytes=self.unique_id)),
                     "username": self.username,
                     "timestamp": getCurrentTime(),
                 }
@@ -601,12 +625,25 @@ class ConferenceClient:
         def video_streams():
             def generate():
                 while self.on_meeting:
-                    camera_id = uuid.UUID(bytes=self.current_camera_data["id"])
-                    camera_id = str(camera_id)
-                    camera_ip = socket.inet_ntoa(self.current_camera_data["client_ip"])
-                    screen_id = uuid.UUID(bytes=self.current_screen_data["id"])
-                    screen_id = str(screen_id)
-                    screen_ip = socket.inet_ntoa(self.current_screen_data["client_ip"])
+                    if self.current_camera_data["id"] is not None:
+                        camera_id = uuid.UUID(bytes=self.current_camera_data["id"])
+                        camera_id = str(camera_id)
+                        camera_ip = socket.inet_ntoa(
+                            self.current_camera_data["client_ip"]
+                        )
+                    else:
+                        camera_id = None
+                        camera_ip = None
+
+                    if self.current_screen_data["id"] is not None:
+                        screen_id = uuid.UUID(bytes=self.current_screen_data["id"])
+                        screen_id = str(screen_id)
+                        screen_ip = socket.inet_ntoa(
+                            self.current_screen_data["client_ip"]
+                        )
+                    else:
+                        screen_id = None
+                        screen_ip = None
                     streams_data = {
                         "camera": {
                             "frame": (
