@@ -13,31 +13,29 @@ from flask import (
     stream_with_context,
 )
 import time
-import sys
 import argparse
 import cv2
 import base64
 import struct
-from threading import Lock
 import numpy as np
 import queue
 import struct
 import time
 import uuid
-import ipaddress
 
 
 SERVER_IP = SERVER_IP_LOCAL
 
-SERVER_INFO_PORT = 8887
 SERVER_PORT = 8888
-SERVER_CONTROL_PORT = 8889
-SERVER_MSG_PORT = 8890
-SERVER_AUDIO_PORT = 8891
-SERVER_SCREEN_PORT = 8892
-SERVER_CAMERA_PORT = 8893
 
-FRONT_PORT = 9000
+SERVER_INFO_PORT = 8889
+SERVER_CONTROL_PORT = 8890
+SERVER_MSG_PORT = 8891
+SERVER_AUDIO_PORT = 8892
+SERVER_SCREEN_PORT = 8893
+SERVER_CAMERA_PORT = 8894
+
+FRONT_PORT = 9999
 
 
 class ConferenceClient:
@@ -291,7 +289,6 @@ class ConferenceClient:
         try:
             while self.on_meeting:
                 header = self.receive_object(self.sock_screen, HEADER_LENGTH)
-                # print("Successfully receive screen header")
                 if not header:
                     break
                 screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
@@ -304,10 +301,8 @@ class ConferenceClient:
                     time_gap > SCREEN_TIME_MAX_GAP
                     and now_time - self.last_control_screen_time > 1
                 ):
-                    # 1 slow screen send
                     self.send_control(1, now_time)
                 screen_data = self.receive_object(self.sock_screen, screen_length)
-                print("Successfully receive screen data")
                 frame = cv2.imdecode(
                     np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -362,7 +357,7 @@ class ConferenceClient:
                     # 2 slow camera send
                     self.send_control(2, now_time)
                 camera_data = self.receive_object(self.sock_camera, camera_length)
-                print("Successfully receive camera data")
+                # print("Successfully receive camera data")
                 frame = cv2.imdecode(
                     np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -391,9 +386,6 @@ class ConferenceClient:
         try:
             while self.on_meeting:
                 sent_audio = input_stream.read(CHUNK, exception_on_overflow=False)
-                # timestamp = time.time()
-                # packet = struct.pack(f"!d16s", timestamp, self.unique_id) + sent_audio
-                # header = struct.pack("!I", len(packet))
                 if self.microphone_on:
                     self.send_object(sent_audio, self.sock_audio)
 
@@ -404,10 +396,9 @@ class ConferenceClient:
 
         while self.on_meeting:
             header = self.receive_object(self.sock_audio, HEADER_LENGTH)
-            # print("Successfully receive audio header")
             audio_length, audio_time, audio_id, audio_ip = self.unpack_object(header)
             audio_data = self.receive_object(self.sock_audio, audio_length)
-            # print("Successfully receive audio data")
+
             now_time = time.time()
             delay = now_time - audio_time
             if delay > 0.5:  # 丢弃延迟超过 500ms 的音频
@@ -430,49 +421,28 @@ class ConferenceClient:
         while self.on_meeting:
             mixed_audio_array = None
 
-            # 遍历用户音频队列
             for ip, user_queue in list(self.audio_buffers.items()):
                 try:
-                    # 获取音频数据
                     recv_audio = user_queue.get(block=False)
                     user_audio_array = np.frombuffer(recv_audio, dtype=np.int16)
                     # self.output_stream.write(user_audio_array.tobytes())
                 except queue.Empty:
-                    # 填充静音
                     user_audio_array = np.zeros(CHUNK, dtype=np.int16)
 
                 if mixed_audio_array is None:
                     mixed_audio_array = np.zeros_like(user_audio_array, dtype=np.int32)
 
-                # 混音叠加
                 mixed_audio_array += user_audio_array
 
-            # 如果没有任何音频数据，填充静音
             if mixed_audio_array is None:
                 mixed_audio_array = np.zeros(CHUNK, dtype=np.int16)
             else:
-                # 剪裁混音数据
                 mixed_audio_array = np.clip(mixed_audio_array, -32768, 32767).astype(
                     np.int16
                 )
 
             if self.speaker_on:
                 self.output_stream.write(mixed_audio_array.tobytes())
-
-            # to flask web
-
-            # try:
-            #     # print(self.mixed_audio.qsize())
-            #     self.mixed_audio.put_nowait(mixed_audio_array.tobytes())
-
-            # except queue.Full:
-            #     # print('shit')
-            #     # self.mixed_audio.get()
-            #     # self.mixed_audio.put(mixed_audio_array.tobytes())
-            #     pass
-
-            # finally:
-            #     time.sleep(CHUNK / RATE)
 
     def start_conference(self):
 
@@ -500,16 +470,18 @@ class ConferenceClient:
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
-            # Strat camera thread
-            threading.Thread(target=self.send_camera).start()
-            threading.Thread(target=self.recv_camera).start()
-            threading.Thread(target=self.send_screen).start()
-            threading.Thread(target=self.recv_screen).start()
-
             # Start audio thread
             threading.Thread(target=self.send_audio).start()
             threading.Thread(target=self.recv_audio).start()
             threading.Thread(target=self.audio_mixer).start()
+
+            # Start camera thread
+            threading.Thread(target=self.send_camera).start()
+            threading.Thread(target=self.recv_camera).start()
+            
+            # Start screen thread
+            threading.Thread(target=self.send_screen).start()
+            threading.Thread(target=self.recv_screen).start()
 
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
@@ -660,12 +632,12 @@ class ConferenceClient:
 
             return Response(generate(), mimetype="text/event-stream")
 
-    def start(self, remote=False):
+    def start(self):
         """
-        execute functions based on the command line input
+        start client server
         """
         self.app.run(
-            host="localhost" if not remote else SERVER_IP,
+            host=SERVER_IP,
             port=FRONT_PORT,
             debug=False,
             threaded=True,
@@ -673,19 +645,10 @@ class ConferenceClient:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Conference Client")
-    parser.add_argument(
-        "-p",
-        "--port",
-        type=int,
-        default=9000,
-        help="Port to run the frontend on (default: 9000)",
-    )
-    parser.add_argument(
-        "-r", "--remote", type=bool, default=False, help="It's remote client"
-    )
+    parser = argparse.ArgumentParser(description="Lichi Conference Client")
+    parser.add_argument("-p", "--port", type=int, default=9999, help="Port to run the web on (default: 9999)",)
     args = parser.parse_args()
 
     FRONT_PORT = args.port
-    client1 = ConferenceClient()
-    client1.start(remote=args.remote)
+    client = ConferenceClient()
+    client.start()
