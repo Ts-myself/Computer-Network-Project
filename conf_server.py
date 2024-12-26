@@ -241,8 +241,6 @@ class ConferenceServer:
                 # if sock_type == "info" or self.mode == "cs":
                 if sock_type == "info":
                     self.client_tcps_info[client_addr] = client_conn
-                elif self.mode == "p2p":
-                    continue
                 elif sock_type == "control":
                     self.client_tcps_control[client_addr] = client_conn
                     threading.Thread(
@@ -285,113 +283,42 @@ class ConferenceServer:
         print(f"Info server started at {self.server_ip}:{self.data_ports['info']}")
         self.sock_info.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock_info.bind((self.server_ip, self.data_ports["info"]))
-        self.sock_info.listen(5)
+        self.sock_info.listen(10)
 
         # control
         self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
-        self.sock_control.bind((self.server_ip, self.data_ports["control"]+100))
-        self.sock_control.listen(5)
+        self.sock_control.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock_control.bind((self.server_ip, self.data_ports["control"]))
+        self.sock_control.listen(10)
 
         # message
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Message server started at {self.server_ip}:{self.data_ports['msg']}")
-        self.sock_msg.bind((self.server_ip, self.data_ports["msg"]+100))
-        self.sock_msg.listen(5)
+        self.sock_msg.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
+        self.sock_msg.listen(10)
 
         # audio
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
-        self.sock_audio.bind((self.server_ip, self.data_ports["audio"]+100))
-        self.sock_audio.listen(5) 
+        self.sock_audio.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock_audio.bind((self.server_ip, self.data_ports["audio"]))
+        self.sock_audio.listen(10)
 
         # screen
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Screen server started at {self.server_ip}:{self.data_ports['screen']}")
-        self.sock_screen.bind((self.server_ip, self.data_ports["screen"]+100))
-        self.sock_screen.listen(5)
+        self.sock_screen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
+        self.sock_screen.listen(10)
 
         # camera
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
-        self.sock_camera.bind((self.server_ip, self.data_ports["camera"]+100))
-        self.sock_camera.listen(5)
-
-
-
-
-        # already
-        # # control
-        # self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
-        # self.sock_control.bind((self.server_ip, self.data_ports["control"]))
-        # self.sock_control.listen(5)
-
-        # # message
-        # self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # print(f"Message server started at {self.server_ip}:{self.data_ports['msg']}")
-        # self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
-        # self.sock_msg.listen(5)
-        
-        # # audio
-        # self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
-        # self.sock_audio.bind((self.server_ip, self.data_ports["audio"]))
-        # self.sock_audio.listen(5) 
-
-        # # screen
-        # self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # print(f"Screen server started at {self.server_ip}:{self.data_ports['screen']}")
-        # self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
-        # self.sock_screen.listen(5)
-        
-        # # camera
-        # self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
-        # self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
-        # self.sock_camera.listen(5)
-
-
-        # while self.running:
-        #     if self.mode == "cs":
-        #         # Accept new TCP client for control handling
-        #         client_conn, client_addr = self.sock_control.accept()
-        #         self.client_tcps_control[client_addr] = client_conn
-        #         threading.Thread(
-        #             target=self.handle_data, 
-        #             args=(client_conn, client_conn, "control")
-        #         ).start()
-        #         # Accept new TCP client for message handling
-        #         client_conn, client_addr = self.sock_msg.accept()
-        #         self.client_tcps_msg[client_addr] = client_conn
-        #         threading.Thread(
-        #             target=self.handle_data, 
-        #             args=(client_conn, self.client_tcps_msg, "msg")
-        #         ).start()
-
-        #     # Accept new TCP client for camera handling
-        #     client_conn, client_addr = self.sock_camera.accept()
-        #     self.client_tcps_camera[client_addr] = client_conn
-        #     threading.Thread(
-        #         target=self.handle_data,
-        #         args=(client_conn, self.client_tcps_screen, "camera"),
-        #     ).start()
-
-        #     # Accept new TCP client for screen handling
-        #     client_conn, client_addr = self.sock_screen.accept()
-        #     self.client_tcps_screen[client_addr] = client_conn
-        #     threading.Thread(
-        #         target=self.handle_data,
-        #         args=(client_conn, self.client_tcps_screen, "screen"),
-        #     ).start()
-
-        #     # Accept new TCP client for audio handling
-        #     client_conn, client_addr = self.sock_audio.accept()
-        #     self.client_tcps_audio[client_addr] = client_conn
-        #     threading.Thread(
-        #         target=self.handle_data,
-        #         args=(client_conn, self.client_tcps_audio, "audio"),
-        #     ).start()
+        self.sock_camera.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
+        self.sock_camera.listen(10)
 
         # Start accept threads for each socket
         accept_threads = [

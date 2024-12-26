@@ -227,7 +227,7 @@ class ConferenceClient:
                     self.mode = "cs"
                     self.conference_id = conference_id
                     self.on_meeting = True
-                    print(f"[Success] Joined conference {conference_id}")
+                    print(f"[Success] Joined conference -----------------------------------{conference_id}")
                     self.server_ip = SERVER_IP
                     self.start_conference()
             else:
@@ -286,6 +286,7 @@ class ConferenceClient:
                     if mode == "p2p2cs":
                         self.server_ip = SERVER_IP
                         self.mode = "cs"
+                        print("1111111111111111111111111111111111111111111111111111111111111111111111111111")
                         self.reconnect()
                     elif mode == "cs2p2p":
                         rest_ip1 = info_data['clients'].keys()[0]
@@ -609,7 +610,7 @@ class ConferenceClient:
             self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
             threading.Thread(target=self.recv_info).start()
         except Exception as e:
-            print(f"[Error] Failed to start conference: {str(e)}")
+            print(f"111[Error] Failed to start conference: {str(e)}")
             self.on_meeting = False
         finally:
             pass
@@ -703,7 +704,7 @@ class ConferenceClient:
         self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_audio.close()
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+        print("try to connect-------------------------------------------")
         try:
             self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
@@ -717,7 +718,7 @@ class ConferenceClient:
             # threading.Thread(target=self.audio_receiver).start()
             # threading.Thread(target=self.audio_mixer).start()
         except Exception as e:
-            print(f"[Error] Failed to start conference: {str(e)}")
+            print(f"222[Error] Failed to start conference: {str(e)}")
             self.on_meeting = False
         finally:
             pass
@@ -769,7 +770,7 @@ class ConferenceClient:
             # self.video_thread.start()
 
         except Exception as e:
-            print(f"[Error] Failed to start conference: {str(e)}")
+            print(f"333[Error] Failed to start conference: {str(e)}")
             self.on_meeting = False
 
         finally:
