@@ -10,18 +10,16 @@ import json
 
 
 class ConferenceServer:
-    def __init__(self, conference_id, data_ports, host_ip, server_ip, communicate_mode="cs"):
+    def __init__(self, conference_id, data_ports, host_id, server_ip, communicate_mode="cs"):
         """
         Initialize a ConferenceServer instance.
         :param conference_id: Unique identifier for the conference.
-        :param conf_serve_ports: Ports allocated for the conference.
         :param clients_info: Initial client information.
         """
         self.server_ip = server_ip
         self.conference_id = conference_id
-        self.conf_serve_ports = data_ports
-        self.data_ports = data_ports  # map data_type to port
-        self.host_ip = host_ip
+        self.data_ports = data_ports
+        self.host_id = host_id
 
         self.clients_info = {}
 
@@ -32,7 +30,14 @@ class ConferenceServer:
         self.client_tcps_screen = dict()
         self.client_tcps_audio = dict()
 
-        self.mode = communicate_mode
+        self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        self.mode = "cs"  # Default mode
         self.running = True
 
     def receive_object(self, connection, length):
@@ -60,13 +65,15 @@ class ConferenceServer:
         :param writer: TCP/UDP socket for sending data.
         :param data_type: Type of data being handled (msg, screen, camera, or audio).
         """
-        if data_type == "msg":
+        if data_type == "info":
+            pass
+        elif data_type == "msg":
             try:
                 while self.running:
                     data = reader.recv(BUFFER_SIZE)
                     if not data:
                         break
-                    print(f"Received message: {data.decode()}")
+                    # print(f"Received message: {data.decode()}")
                     # Forward the message to all other clients
                     for client_conn in self.client_tcps_msg.values():
                         # if client_conn != reader:
@@ -81,32 +88,36 @@ class ConferenceServer:
                     header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    audio_length, audio_time, audio_id, audio_ip = self.unpack_object(header)
+                    audio_length, audio_time, audio_id, audio_ip = self.unpack_object(
+                        header
+                    )
                     audio_data = self.receive_object(reader, audio_length)
-                    print(f"Received audio data: {len(audio_data)} bytes")
+                    # print(f"Received audio data: {len(audio_data)} bytes")
                     for client_conn in self.client_tcps_audio.values():
-                        if client_conn == reader: # debug only
-                        # if client_conn != reader:  # Don't send back to the sender
+                        # if client_conn == reader:  # debug only
+                        if client_conn != reader:  # Don't send back to the sender
                             client_conn.send(header)
                             client_conn.send(audio_data)
-                            print(f"Successfully forwarded audio data to {client_conn.getpeername()}")
+                            # print(f"Successfully forwarded audio data to {client_conn.getpeername()}")
 
             except Exception as e:
                 print(f"[Error] Audio handling error: {str(e)}")
         elif data_type == "screen":
             try:
                 while self.running:
-                    header = self.receive_object(reader, HEADER_LENGTH)  
+                    header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    screen_length, screen_time, screen_id, screen_ip = self.unpack_object(header)
+                    screen_length, screen_time, screen_id, screen_ip = (
+                        self.unpack_object(header)
+                    )
                     screen_data = self.receive_object(reader, screen_length)
-                    print(f"Received screen data: {len(screen_data)} bytes")
+                    # print(f"Received screen data: {len(screen_data)} bytes")
                     for client_conn in self.client_tcps_screen.values():
                         # if client_conn != reader:
                         client_conn.send(header)
                         client_conn.send(screen_data)
-                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        # print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
             except Exception as e:
                 print(f"[Error] Camera handling error: {str(e)}")
         elif data_type == "camera":
@@ -115,14 +126,16 @@ class ConferenceServer:
                     header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    camera_length, camera_time, camera_id, camera_ip = self.unpack_object(header)
+                    camera_length, camera_time, camera_id, camera_ip = (
+                        self.unpack_object(header)
+                    )
                     data = self.receive_object(reader, camera_length)
-                    print(f"Received camera data: {len(data)} bytes")
+                    # print(f"Received camera data: {len(data)} bytes")
                     for client_conn in self.client_tcps_camera.values():
                         # if client_conn != reader:
                         client_conn.send(header)
                         client_conn.send(data)
-                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        # print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
             except Exception as e:
                 print(f"[Error] Camera handling error: {str(e)}")
         elif data_type == "control":
@@ -171,13 +184,11 @@ class ConferenceServer:
         # except Exception as e:
         #     print(f"[ERROR] Error in logging task: {e}")
 
-    def boardcast_client_info(self,state = 0):
+    def boardcast_client_info(self, state = 0):
         """
         Boardcast client info to all clients.
         """
-        print(
-            f"[INFO] Broadcasting client info to {len(self.client_tcps_info)} clients"
-        )
+        # print(f"[INFO] Broadcasting client info to {len(self.client_tcps_info)} clients")
         for client_conn in self.client_tcps_info.values():
             try:
                 print(f"[INFO] Sending to client: {client_conn.getpeername()}")
@@ -202,27 +213,58 @@ class ConferenceServer:
                         **self.clients_info
                     }
                 client_conn.send(json.dumps(data).encode())     
-                # client_conn.send(json.dumps(self.clients_info).encode())
                 print(f"[INFO] Successfully sent to {client_conn.getpeername()}")
             except Exception as e:
                 print(f"[ERROR] Failed to send to client {client_conn}: {str(e)}")
 
     def cancel_conference(self):
         """
-        Cancel the conference and disconnect all clients.
+        Gracefully close all client TCP connections when the conference ends.
         """
-        # try:
-        #     self.running = False
-        #     print(f"[INFO] Cancelling conference {self.conference_id}.")
-        #     for client_id, client_writer in self.client_conns.items():
-        #         client_writer.close()
-        #         await client_writer.wait_closed()
-        #     self.client_conns.clear()
-        #     print(
-        #         f"[INFO] Conference {self.conference_id} has been successfully cancelled."
-        #     )
-        # except Exception as e:
-        #     print(f"[ERROR] Error while cancelling conference: {e}")
+        self.running = False
+        all_connections = self.which_type_tcp("all")
+
+        for conn_dict in all_connections:
+            for client_conn in conn_dict.values():
+                try:
+                    client_conn.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                finally:
+                    client_conn.close()
+
+        self.sock_info.close()
+        self.sock_control.close()
+        self.sock_msg.close()
+        self.sock_audio.close()
+        self.sock_camera.close()
+        self.sock_screen.close()
+
+        print("All TCP connections are closed and dictionaries are cleared.")
+
+    def quit_conference(self, client_id):
+        """
+        Quit conference: Remove a client from the specified ConferenceServer.
+        :param client_id: Unique identifier of the client leaving the conference.
+        :return: Dictionary with the result (success or error).
+        """
+        all_connections = self.which_type_tcp("all")
+
+        for conn_dict in all_connections:
+            if client_id in conn_dict:
+                conn = conn_dict[client_id]
+                try:
+                    conn.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                finally:
+                    conn.close()
+                    del conn_dict[client_id]
+                    print(f"Connection with {client_id} closed and removed.")
+
+        self.clients_info.pop(client_id)
+
+        print(f"[INFO] Client {client_id} has left the {self.conference_id}.")
 
     def accept_connections(self, sock, sock_type):
         """
@@ -231,107 +273,101 @@ class ConferenceServer:
         while self.running:
             try:
                 client_conn, client_addr = sock.accept()
-                print(f"[!!!] accept {sock_type}")
-                # if sock_type == "info" or self.mode == "cs":
-                if sock_type == "info":
-                    self.client_tcps_info[client_addr] = client_conn
-                elif sock_type == "control":
-                    self.client_tcps_control[client_addr] = client_conn
-                    threading.Thread(
-                        target=self.handle_data,
-                        args=(client_conn, client_conn, "control"),
-                    ).start()
-                elif sock_type == "msg":
-                    self.client_tcps_msg[client_addr] = client_conn
-                    threading.Thread(
-                        target=self.handle_data,
-                        args=(client_conn, self.client_tcps_msg, "msg"),
-                    ).start()
-                elif sock_type == "audio":
-                    self.client_tcps_audio[client_addr] = client_conn
-                    threading.Thread(
-                        target=self.handle_data,
-                        args=(client_conn, self.client_tcps_audio, "audio"),
-                    ).start()
-                elif sock_type == "camera":
-                    self.client_tcps_camera[client_addr] = client_conn
-                    threading.Thread(
-                        target=self.handle_data,
-                        args=(client_conn, self.client_tcps_camera, "camera"),
-                    ).start()
-                elif sock_type == "screen":
-                    self.client_tcps_screen[client_addr] = client_conn
-                    threading.Thread(
-                        target=self.handle_data,
-                        args=(client_conn, self.client_tcps_screen, "screen"),
-                    ).start()
+                print(f"[{self.conference_id}] accept {sock_type}")
+
+                self.which_type_tcp(sock_type)[client_addr] = client_conn
+                threading.Thread(
+                    target=self.handle_data,
+                    args=(client_conn, self.which_type_tcp(sock_type), sock_type),
+                    daemon=True,
+                ).start()
+
             except Exception as e:
+                if not self.running:
+                    break
                 print(f"[Error] Error accepting {sock_type} connection: {str(e)}")
 
     def start(self):
         """
         Start the ConferenceServer and begin handling clients and data streams.
         """
-        # info
-        self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Info server started at {self.server_ip}:{self.data_ports['info']}")
-        self.sock_info.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock_info.bind((self.server_ip, self.data_ports["info"]))
-        self.sock_info.listen(10)
 
-        # control
-        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Control server started at {self.server_ip}:{self.data_ports['control']}")
-        self.sock_control.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock_control.bind((self.server_ip, self.data_ports["control"]))
-        self.sock_control.listen(10)
+        sock_types = ["info", "control", "msg", "audio", "camera", "screen"]
 
-        # message
-        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Message server started at {self.server_ip}:{self.data_ports['msg']}")
-        self.sock_msg.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock_msg.bind((self.server_ip, self.data_ports["msg"]))
-        self.sock_msg.listen(10)
+        for sock_type in sock_types:
+            self.which_type_sock(sock_type).setsockopt(
+                socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
+            )
+            print(
+                f"{sock_type} server started at {self.server_ip}:{self.data_ports[sock_type]}"
+            )
+            self.which_type_sock(sock_type).bind(
+                (self.server_ip, self.data_ports[sock_type])
+            )
+            self.which_type_sock(sock_type).listen(5)
 
-        # audio
-        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Audio server started at {self.server_ip}:{self.data_ports['audio']}")
-        self.sock_audio.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock_audio.bind((self.server_ip, self.data_ports["audio"]))
-        self.sock_audio.listen(10)
-
-        # screen
-        self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Screen server started at {self.server_ip}:{self.data_ports['screen']}")
-        self.sock_screen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock_screen.bind((self.server_ip, self.data_ports["screen"]))
-        self.sock_screen.listen(10)
-
-        # camera
-        self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"Camera server started at {self.server_ip}:{self.data_ports['camera']}")
-        self.sock_camera.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock_camera.bind((self.server_ip, self.data_ports["camera"]))
-        self.sock_camera.listen(10)
-
-        # Start accept threads for each socket
-        accept_threads = [
-            ("info", self.sock_info),
-            ("control", self.sock_control),
-            ("msg", self.sock_msg),
-            ("audio", self.sock_audio),
-            ("camera", self.sock_camera),
-            ("screen", self.sock_screen),
-        ]
-
-        for sock_type, sock in accept_threads:
+        for sock_type in sock_types:
             threading.Thread(
-                target=self.accept_connections, args=(sock, sock_type), daemon=True
+                target=self.accept_connections,
+                args=(self.which_type_sock(sock_type), sock_type),
+                daemon=True,
             ).start()
 
         # Keep main thread alive
         while self.running:
             time.sleep(1)
+
+    def which_type_tcp(self, type):
+        if type == "info":
+            return self.client_tcps_info
+        if type == "control":
+            return self.client_tcps_control
+        if type == "msg":
+            return self.client_tcps_msg
+        if type == "audio":
+            return self.client_tcps_audio
+        if type == "camera":
+            return self.client_tcps_camera
+        if type == "screen":
+            return self.client_tcps_screen
+        if type == "all":
+            return [
+                self.client_tcps_info,
+                self.client_tcps_control,
+                self.client_tcps_msg,
+                self.client_tcps_audio,
+                self.client_tcps_camera,
+                self.client_tcps_screen,
+            ]
+        else:
+            print(f"[Error] Invalid socket type: {type}")
+            return None
+
+    def which_type_sock(self, type):
+        if type == "info":
+            return self.sock_info
+        if type == "control":
+            return self.sock_control
+        if type == "msg":
+            return self.sock_msg
+        if type == "audio":
+            return self.sock_audio
+        if type == "camera":
+            return self.sock_camera
+        if type == "screen":
+            return self.sock_screen
+        if type == "all":
+            return [
+                self.sock_info,
+                self.sock_control,
+                self.sock_msg,
+                self.sock_audio,
+                self.sock_camera,
+                self.sock_screen,
+            ]
+        else:
+            print(f"[Error] Invalid socket type: {type}")
+            return None
 
 
 class MainServer:
@@ -347,9 +383,7 @@ class MainServer:
         self.main_server = None
         self.conference_servers = {}  # dict conference_id: ConferenceServer
         self.app = Flask(__name__)
-        # self.app.config['SECRET_KEY'] = 'secret!'
         self.setup_routes()
-        # self.socketio = SocketIO(self.app)
 
     def generate_conference_id(self):
         """
@@ -367,20 +401,20 @@ class MainServer:
             :return: A dictionary with {status, message, conference_id, ports}.
             """
             data = request.get_json()
-            client_username = data["username"]
-            client_ip = request.remote_addr
+            client_ip = data["client_ip"]
+            client_id = data["id"]
             conf_id = self.generate_conference_id()
-            self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip, "p2p")
-            # self.conference_servers[conf_id] = ConferenceServer(conf_id, self.conf_ports, client_ip, self.server_ip, "cs")
+            self.conference_servers[conf_id] = ConferenceServer(
+                conf_id, self.conf_ports, client_id, self.server_ip, "p2p"
+            )
             threading.Thread(target=self.conference_servers[conf_id].start).start()
-            print(f"[INFO] Created conference {conf_id} for {client_ip}")
-
+            print(f"[INFO] Created conference {conf_id} for {client_id}")
             conf_server = self.conference_servers[conf_id]
-            conf_server.clients_info[client_ip] = {
-                "username": client_username,
+            conf_server.clients_info[client_id] = {
+                "username": data["username"],
                 "join_time": getCurrentTime(),
+                "ip": client_ip,
             }
-
             return jsonify(
                 {
                     "status": "success",
@@ -400,6 +434,7 @@ class MainServer:
             data = request.get_json()
             client_username = data["username"]
             client_ip = request.remote_addr
+            client_id = data["id"]
 
             if conference_id not in self.conference_servers:
                 return (
@@ -407,21 +442,21 @@ class MainServer:
                     404,
                 )
 
-            # client_ip = request.remote_addr
-
-            if client_ip in self.conference_servers[conference_id].clients_info.keys():
+            if client_id in self.conference_servers[conference_id].clients_info.keys():
                 return (
                     jsonify({"status": "error", "message": "Client already joined"}),
                     400,
                 )
-            
+
             conf_server = self.conference_servers[conference_id]
-            client_goal_ip = list(conf_server.clients_info.keys())
-            conf_server.clients_info[client_ip] = {
+            conf_server.clients_info[client_id] = {
                 "username": client_username,
                 "join_time": getCurrentTime(),
+                "ip": client_ip,
             }
-            # print(conf_server.clients_info)
+            client_goal_ip = []
+            for client_info in conf_server.clients_info.values():
+                client_goal_ip.append(client_info['ip'])
 
             if conf_server.mode == "cs":
                 conf_server.boardcast_client_info()
@@ -445,8 +480,6 @@ class MainServer:
                 )
             else:
                 conf_server.mode = "cs"
-                print("-------------------------------------------------------")
-                print(f"{conf_server.clients_info}")
                 conf_server.boardcast_client_info(1)
                 return jsonify(
                     {
@@ -460,52 +493,54 @@ class MainServer:
         @self.app.route("/quit_conference/<conference_id>", methods=["POST"])
         def handle_quit_conference(conference_id):
             """
-            Quit conference: Remove a client from the specified ConferenceServer.
-            :param client_id: Unique identifier of the client leaving the conference.
-            :param conference_id: The ID of the conference the client wants to leave.
-            :return: Dictionary with the result (success or error).
+            Quit conference: Remove a client from the specified ConferenceServer. If the client is the host, cancel the conference.
             """
             if conference_id in self.conference_servers:
+                client_id = request.get_json()["id"]
                 client_ip = request.remote_addr
                 conf_server = self.conference_servers[conference_id]
-                conf_server.clients_info.pop(client_ip)
-                print(conf_server.clients_info)
-                if conf_server.mode == "p2p":
-                    conf_server.boardcast_client_info(3)
-                elif conf_server.mode == "cs" and len(conf_server.clients_info) >=3:
-                    conf_server.boardcast_client_info()
-                else :
-                    conf_server.mode = "p2p"
-                    conf_server.boardcast_client_info(2)
-                return jsonify({"status": "success"})
-            return jsonify({"status": "error", "message": "Conference not found"}), 404
 
-        @self.app.route("/cancel_conference/<conference_id>", methods=["POST"])
-        def handle_cancel_conference(conference_id):
-            """
-            Cancel conference: Close the specified ConferenceServer and notify all clients.
-            :param conference_id: The ID of the conference to be canceled.
-            :return: Dictionary with the result (success or error).
-            """
-            if conference_id not in self.conference_servers:
+                if client_id == conf_server.host_id:
+                    # quit & cancel
+                    conf_server.cancel_conference()
+                    del self.conference_servers[conference_id]
+
+                    print(f"[INFO] Conference {conference_id} is deleted by the host.")
+                    print(
+                        f"[INFO] Current conferences: {self.conference_servers.keys()}"
+                    )
+                    conf_server.boardcast_client_info()
+                else:
+                    # quit
+                    conf_server.quit_conference(client_id)
+                    if conf_server.mode == "p2p":
+                        conf_server.boardcast_client_info(3)
+                    elif conf_server.mode == "cs" and len(conf_server.clients_info) >=3:
+                        conf_server.boardcast_client_info()
+                    else :
+                        conf_server.mode = "p2p"
+                        conf_server.boardcast_client_info(2)
+
+
+                return (
+                    jsonify(
+                        {
+                            "status": "success",
+                            "message": "Client has left the conference",
+                        }
+                    ),
+                    200,
+                )
+            else:
                 return (
                     jsonify({"status": "error", "message": "Conference not found"}),
                     404,
                 )
 
-            # TODO
-            # all_clients = self.conference_servers[conference_id].clients_info.keys()
-            # for client_ip in all_clients:
-            #     requests.post(f"{client_ip}/cancel_conference/{conference_id}")
-            del self.conference_servers[conference_id]
-            print(self.conference_servers)
-            return jsonify({"status": "success"})
-
     def start(self):
         """
         start MainServer
         """
-        # self.socketio.run(self.app, host=self.server_ip, port=self.server_port)
         self.app.run(host=self.server_ip, port=self.server_port)
 
 
