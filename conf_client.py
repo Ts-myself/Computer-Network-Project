@@ -27,8 +27,9 @@ import uuid
 import ipaddress
 
 
+SERVER_IP = SERVER_IP_LOCAL
+
 SERVER_INFO_PORT = 8887
-SERVER_IP = SERVER_IP_PUBLIC_TJL
 SERVER_PORT = 8888
 SERVER_CONTROL_PORT = 8889
 SERVER_MSG_PORT = 8890
@@ -45,7 +46,6 @@ class ConferenceClient:
     ):
         # sync client
         self.unique_id = uuid.uuid4().bytes
-        self.is_working = True
         self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
         self.server_ip = SERVER_IP
 
@@ -57,40 +57,22 @@ class ConferenceClient:
 
         self.username = "User"
         self.on_meeting = False  # status
-        self.conns = (
-            None  # you may need to maintain multiple conns for a single conference
-        )
-        self.support_data_types = []  # for some types of data
-        self.share_data = {}
         self.conference_id = None
         self.participant_num = 1
+
         # struct pack uuid and ip
         self.id = struct.pack(">16s", self.unique_id)
         self.ip = struct.pack(">4s", socket.inet_aton(self.client_ip))
-        # self.conference_info = None  # you may need to save and update some conference_info regularly
+
         self.client_info = {}
 
-        self.recv_data = None  # you may need to save received streamd data from other clients in conference
-
-        self.recv_msgs = []
-
-        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        ### Audio Streaming ###
+        # audio
         self.audio = pyaudio.PyAudio()
-        self.server_audio_port = SERVER_AUDIO_PORT
-        self.client_audio_port = 8989
         self.microphone_on = True
         self.speaker_on = True
 
         self.audio_buffers = {}
         self.mixed_audio = queue.Queue(maxsize=10)
-
-        # self.audio_udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # self.audio_udp_socket.bind((self.client_ip, self.client_audio_port))
-        # self.audio_udp_socket.setblocking(False)  # 设置非阻塞模式
-
-        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self.output_stream = self.audio.open(
             format=FORMAT,
@@ -98,51 +80,29 @@ class ConferenceClient:
             rate=RATE,
             output=True,
         )
-        # info
-        self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # message
         self.new_msgs = []
-        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # 添加视频相关的属性
-        self.video_capture = None
-        self.frame_lock = Lock()
-        self.current_frame = None
-        self.video_thread = None
-        self.is_streaming = False
         self.current_camera_frame = None
         self.current_camera_data = {"client_ip": None, "id": None}
         self.current_screen_frame = None
         self.current_screen_data = {"client_ip": None, "id": None}
 
         # control
-        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.last_control_screen_time = time.time()
         self.last_control_camera_time = time.time()
         self.screen_sleep_time = 0
         self.camera_sleep_time = 0
 
         # camera and screen
-        self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.is_camera_streaming = True
-        self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.is_screen_streaming = True
 
         # connect to frontend
         self.app = Flask(__name__)
         self.setup_routes()
-
-        camera_path = "static/camera_off.png"
-        screen_path = "static/screen_off.png"
-        frame = cv2.imread(camera_path, cv2.IMREAD_UNCHANGED)
-        _, buffer = cv2.imencode(".jpg", frame)
-        frame_base64 = base64.b64encode(buffer).decode("utf-8")
-        self.camera_off_img = frame_base64
-        frame = cv2.imread(screen_path, cv2.IMREAD_UNCHANGED)
-        _, buffer = cv2.imencode(".jpg", frame)
-        frame_base64 = base64.b64encode(buffer).decode("utf-8")
-        self.screen_off_img = frame_base64
 
     def create_conference(self):
         """
@@ -192,35 +152,24 @@ class ConferenceClient:
             print("[Warn] Not in a conference")
             return
 
+        self.on_meeting = False
+
         try:
             response = requests.post(
                 f"{self.server_addr}/quit_conference/{self.conference_id}"
             )
             if response.status_code == 200:
-                self.close_conference()
+
+                self.sock_info.close()
+                self.sock_control.close()
+                self.sock_msg.close()
+                self.sock_audio.close()
+                self.sock_camera.close()
+                self.sock_screen.close()
+
                 print("[Success] Quit conference")
             else:
                 print("[Error] Failed to quit conference")
-        except Exception as e:
-            print(f"[Error] {str(e)}")
-
-    def cancel_conference(self):
-        """
-        cancel your on-going conference (when you are the conference manager): ask server to close all clients
-        """
-        if not self.on_meeting:
-            print("[Warn] Not in a conference")
-            return
-
-        try:
-            response = requests.post(
-                f"{self.server_addr}/cancel_conference/{self.conference_id}"
-            )
-            if response.status_code == 200:
-                self.close_conference()
-                print("[Success] Cancelled conference")
-            else:
-                print("[Error] Failed to cancel conference")
         except Exception as e:
             print(f"[Error] {str(e)}")
 
@@ -288,7 +237,7 @@ class ConferenceClient:
             header += self.ip
             connection.send(header)
             connection.send(object)
-            print(f"send object to {connection}")
+            # print(f"send object to {connection}")
         except Exception as e:
             print(f"Error sending object: {e}")
 
@@ -342,7 +291,7 @@ class ConferenceClient:
         try:
             while self.on_meeting:
                 header = self.receive_object(self.sock_screen, HEADER_LENGTH)
-                print("Successfully receive screen header")
+                # print("Successfully receive screen header")
                 if not header:
                     break
                 screen_length, screen_time, screen_id, screen_ip = self.unpack_object(
@@ -359,7 +308,6 @@ class ConferenceClient:
                     self.send_control(1, now_time)
                 screen_data = self.receive_object(self.sock_screen, screen_length)
                 print("Successfully receive screen data")
-                print(f"len(screen_data): {len(screen_data)}")
                 frame = cv2.imdecode(
                     np.frombuffer(screen_data, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -398,7 +346,7 @@ class ConferenceClient:
         try:
             while self.on_meeting:
                 header = self.receive_object(self.sock_camera, HEADER_LENGTH)
-                print("Successfully receive camera header")
+                # print("Successfully receive camera header")
                 if not header:
                     break
                 camera_length, camera_time, camera_id, camera_ip = self.unpack_object(
@@ -415,7 +363,6 @@ class ConferenceClient:
                     self.send_control(2, now_time)
                 camera_data = self.receive_object(self.sock_camera, camera_length)
                 print("Successfully receive camera data")
-                print(f"len(camera_data): {len(camera_data)}")
                 frame = cv2.imdecode(
                     np.frombuffer(camera_data, np.uint8), cv2.IMREAD_COLOR
                 )
@@ -432,7 +379,7 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] Failed to receive camera data: {str(e)}")
 
-    def audio_sender(self):
+    def send_audio(self):
         print("[INFO] Starting audio streaming...")
         input_stream = self.audio.open(
             format=FORMAT,
@@ -453,14 +400,14 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] Failed to send audio data: {str(e)}")
 
-    def audio_receiver(self):
+    def recv_audio(self):
 
         while self.on_meeting:
             header = self.receive_object(self.sock_audio, HEADER_LENGTH)
-            print("Successfully receive audio header")
+            # print("Successfully receive audio header")
             audio_length, audio_time, audio_id, audio_ip = self.unpack_object(header)
             audio_data = self.receive_object(self.sock_audio, audio_length)
-            print("Successfully receive audio data")
+            # print("Successfully receive audio data")
             now_time = time.time()
             delay = now_time - audio_time
             if delay > 0.5:  # 丢弃延迟超过 500ms 的音频
@@ -528,11 +475,14 @@ class ConferenceClient:
             #     time.sleep(CHUNK / RATE)
 
     def start_conference(self):
-        """
-        init conns when create or join a conference with necessary conference_info
-        and
-        start necessary running task for conference
-        """
+
+        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_screen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         try:
             self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
             self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
@@ -541,16 +491,15 @@ class ConferenceClient:
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
             self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
 
-            # Start control receiving thread
+            # Start control thread
             threading.Thread(target=self.recv_control).start()
 
             # Start info thread
             threading.Thread(target=self.recv_info).start()
+
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
-            # Start audio thread
-            # threading.Thread(target=self.start_audio).start()
             # Strat camera thread
             threading.Thread(target=self.send_camera).start()
             threading.Thread(target=self.recv_camera).start()
@@ -558,14 +507,9 @@ class ConferenceClient:
             threading.Thread(target=self.recv_screen).start()
 
             # Start audio thread
-            threading.Thread(target=self.audio_sender).start()
-            threading.Thread(target=self.audio_receiver).start()
+            threading.Thread(target=self.send_audio).start()
+            threading.Thread(target=self.recv_audio).start()
             threading.Thread(target=self.audio_mixer).start()
-
-            # 自动开启视频流
-            self.is_streaming = True
-            # self.video_thread = threading.Thread(target=self.process_video)
-            # self.video_thread.start()
 
         except Exception as e:
             print(f"[Error] Failed to start conference: {str(e)}")
@@ -576,14 +520,6 @@ class ConferenceClient:
             # Terminate PyAudio when the conference ends
             # self.audio.terminate()
 
-    def close_conference(self):
-        """
-        close all conns to servers or other clients and cancel the running tasks
-        pay attention to the exception handling
-        """
-        self.on_meeting = False
-        print(f"[Success] Closed conference {self.conference_id}")
-
     def setup_routes(self):
         @self.app.route("/")
         def index():
@@ -591,6 +527,7 @@ class ConferenceClient:
 
         @self.app.route("/conference")
         def conference():
+            print(f"if on_meeting: {self.on_meeting}")
             if self.on_meeting:
                 return render_template("/frontend/conference.html")
             else:
@@ -648,13 +585,7 @@ class ConferenceClient:
                 print(f"[INFO] Microphone status: {self.microphone_on}")
             elif action == "toggle_speaker":
                 self.speaker_on = not self.speaker_on
-                print(f"[INFO] Speaker status: {self.speaker_on}")
                 print(f"[INFO] Microphone on: {self.microphone_on}")
-            elif action == "switch_meeting":
-                data = request.json
-                self.conference_id = data["conference_id"]
-                self.join_conference(self.conference_id)
-                print(f"[INFO] Switch to conference {self.conference_id}")
             elif action == "exit_meeting":
                 self.quit_conference()
                 print("[INFO] Quit meeting")
@@ -693,30 +624,6 @@ class ConferenceClient:
             except Exception as e:
                 print(f"[Error] Failed to send message: {str(e)}")
                 return jsonify({"status": "error", "message": str(e)}), 500
-
-        @self.app.route("/api/audio_feed")
-        def audio_feed():
-            def generate_audio():
-
-                pass
-
-                # send wav header
-                # yield generate_wav_header(
-                #     sample_rate=RATE,
-                #     bits_per_sample=BYTES_PER_SAMPLE * 8,
-                #     channels=CHANNELS
-                # )
-
-                # while self.on_meeting and self.speaker_on:
-                #     print(self.mixed_audio.qsize())
-                #     try:
-                #         mixed_audio = self.mixed_audio.get(block=True, timeout=0.1)
-                #     except queue.Empty:
-                #         mixed_audio = b'\x00' * CHUNK
-
-                #     yield mixed_audio
-
-            return Response(generate_audio(), mimetype="audio/wav")
 
         @self.app.route("/api/video_streams")
         def video_streams():
@@ -763,73 +670,6 @@ class ConferenceClient:
             debug=False,
             threaded=True,
         )
-        while True:
-            if not self.on_meeting:
-                status = "Free"
-            else:
-                status = f"OnMeeting-{self.conference_id}"
-
-            recognized = True
-            cmd_input = (
-                input(f'({status}) Please enter a operation (enter "?" to help): ')
-                .strip()
-                .lower()
-            )
-            fields = cmd_input.split(maxsplit=1)
-            if len(fields) == 1:
-                if cmd_input in ("?", "？"):
-                    print(HELP)
-                elif cmd_input == "create":
-                    self.create_conference()
-                elif cmd_input == "quit":
-                    self.quit_conference()
-                elif cmd_input == "cancel":
-                    self.cancel_conference()
-                else:
-                    recognized = False
-            elif len(fields) == 2:
-                if fields[0] == "join":
-                    input_conf_id = fields[1]
-                    if input_conf_id.isdigit():
-                        self.join_conference(input_conf_id)
-                    else:
-                        print("[Warn]: Input conference ID must be in digital form")
-                elif fields[0] == "switch":
-                    data_type = fields[1]
-                    if data_type in self.share_data.keys():
-                        self.share_switch(data_type)
-                else:
-                    recognized = False
-            else:
-                recognized = False
-
-            if not recognized:
-                print(f"[Warn]: Unrecognized cmd_input {cmd_input}")
-
-    def process_video(self):
-        """处理视频流并保持当前帧的更新"""
-        self.video_capture = cv2.VideoCapture(self.video_path)
-        while self.is_streaming and self.on_meeting:
-            ret, frame = self.video_capture.read()
-            if not ret:
-                # 视频结束时重新开始
-                self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                continue
-
-            # 调整帧大小
-            frame = cv2.resize(frame, (640, 480))
-
-            # 将帧转换为base64格式
-            _, buffer = cv2.imencode(".jpg", frame)
-            frame_base64 = base64.b64encode(buffer).decode("utf-8")
-
-            with self.frame_lock:
-                self.current_frame = frame_base64
-
-            time.sleep(CHUNK / RATE)  # 控制帧率
-
-        if self.video_capture:
-            self.video_capture.release()
 
 
 if __name__ == "__main__":

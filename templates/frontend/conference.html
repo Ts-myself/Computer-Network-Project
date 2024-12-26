@@ -242,28 +242,11 @@
             <button id="toggleScreen" aria-label="打开或关闭屏幕共享">打开/关闭屏幕</button>
             <button id="toggleMic" aria-label="打开或关闭麦克风">打开/关闭麦克风</button>
             <button id="toggleSpeaker" aria-label="打开或关闭扬声器">打开/关闭扬声器</button>
-            <!-- <audio id="audio" autoplay controls class="audio-element"></audio> -->
         </div>
         <div class="control-group">
-            <button id="switchMeeting" aria-label="切换到其他会议">切换会议</button>
             <button id="exitMeeting" aria-label="退出或关闭当前会议">退出/关闭会议</button>
         </div>
     </div>
-
-
-    <!-- <script>
-        const audioElement = document.getElementById('audio');
-
-        // 通过 JavaScript 尝试播放音频
-        audioElement.src = '/api/audio_feed';
-        audioElement.type = 'audio/wav';
-
-        audioElement.play().then(() => {
-            console.log("Audio started playing automatically.");
-        }).catch(error => {
-            console.error("Audio autoplay was prevented. User interaction required:", error);
-        });
-    </script> -->
 
     <script>
         // 在文件开头添加配置
@@ -471,16 +454,6 @@
         document.getElementById('toggleSpeaker').addEventListener('click', function () {
             // 向Flask后端发送切换扬声器状态的请求
             fetch('/api/button/toggle_speaker', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-        });
-
-        document.getElementById('switchMeeting').addEventListener('click', function () {
-            // 向Flask后端发送切换会议的请求
-            fetch('/api/button/switch_meeting', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
