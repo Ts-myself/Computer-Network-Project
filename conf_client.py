@@ -213,6 +213,7 @@ class ConferenceClient:
                     self.on_meeting = True
                     print(f"[Success] Joined conference {conference_id}")
                     self.server_ip = data["clients"]
+                    print(f"{self.server_ip}--------------------------------------------")
                     self.start_conference()
                 elif data['mode'] == "p2p2cs":
                     self.conference_id = conference_id
@@ -622,7 +623,7 @@ class ConferenceClient:
         """
         try:
             self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
-            # self.sock_info.connect((self.server_ip, SERVER_INFO_PORT))
+            self.sock_info.connect((SERVER_IP, SERVER_INFO_PORT))
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
@@ -632,7 +633,7 @@ class ConferenceClient:
             threading.Thread(target=self.recv_control).start()
 
             # Start info thread
-            # threading.Thread(target=self.recv_info).start()
+            threading.Thread(target=self.recv_info).start()
             # Start message receiving thread
             threading.Thread(target=self.recv_msg).start()
 
