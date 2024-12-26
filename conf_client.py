@@ -66,7 +66,12 @@ class ConferenceClient:
         self.is_working = True
         self.server_addr = f"http://{SERVER_IP}:{SERVER_PORT}"
         self.server_ip = SERVER_IP
-        self.client_ip = socket.gethostbyname(socket.gethostname())
+        # get client ip
+        self.sock_temp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock_temp.connect(("8.8.8.8", 80))
+        self.client_ip = self.sock_temp.getsockname()[0]
+        self.sock_temp.close()
+        
         self.username = "User"
         self.on_meeting = False  # status
         self.conns = (
