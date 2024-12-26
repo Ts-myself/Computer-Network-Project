@@ -578,11 +578,17 @@ class ConferenceClient:
         conn,addr = self.sock_audio.accept()
         self.sock_audio = conn
 
-        threading.Thread(target=self.recv_control).start()
+        threading.Thread(target=self.recv_info).start()
+            # Start message receiving thread
         threading.Thread(target=self.recv_msg).start()
+            # Strat camera thread
+        threading.Thread(target=self.send_camera).start()
         threading.Thread(target=self.recv_camera).start()
+        threading.Thread(target=self.send_screen).start()
         threading.Thread(target=self.recv_screen).start()
-        # threading.Thread(target=self.audio_receiver).start()
+        # Start audio thread
+        threading.Thread(target=self.send_audio).start()
+        threading.Thread(target=self.recv_audio).start()
         threading.Thread(target=self.audio_mixer).start()
 
         self.is_streaming = True
@@ -631,11 +637,17 @@ class ConferenceClient:
         conn,addr = self.sock_audio.accept()
         self.sock_audio = conn
 
-        threading.Thread(target=self.recv_control).start()
+        threading.Thread(target=self.recv_info).start()
+            # Start message receiving thread
         threading.Thread(target=self.recv_msg).start()
+            # Strat camera thread
+        threading.Thread(target=self.send_camera).start()
         threading.Thread(target=self.recv_camera).start()
+        threading.Thread(target=self.send_screen).start()
         threading.Thread(target=self.recv_screen).start()
-        # threading.Thread(target=self.audio_receiver).start()
+        # Start audio thread
+        threading.Thread(target=self.send_audio).start()
+        threading.Thread(target=self.recv_audio).start()
         threading.Thread(target=self.audio_mixer).start()
         
 
@@ -661,12 +673,22 @@ class ConferenceClient:
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
             self.sock_screen.connect((self.server_ip, SERVER_SCREEN_PORT))
             self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
-            threading.Thread(target=self.recv_control).start()
-            threading.Thread(target=self.recv_msg).start()
-            threading.Thread(target=self.recv_camera).start()
-            threading.Thread(target=self.recv_screen).start()
+
+            # Start info thread
             threading.Thread(target=self.recv_info).start()
-            # threading.Thread(target=self.audio_receiver).start()
+
+            # Start message receiving thread
+            threading.Thread(target=self.recv_msg).start()
+
+            # Strat camera thread
+            threading.Thread(target=self.send_camera).start()
+            threading.Thread(target=self.recv_camera).start()
+            threading.Thread(target=self.send_screen).start()
+            threading.Thread(target=self.recv_screen).start()
+
+            # Start audio thread
+            threading.Thread(target=self.send_audio).start()
+            threading.Thread(target=self.recv_audio).start()
             threading.Thread(target=self.audio_mixer).start()
         except Exception as e:
             print(f"222[Error] Failed to start conference: {str(e)}")
