@@ -347,6 +347,7 @@
                 const screenVideo = document.createElement('img');
                 screenVideo.className = 'screen-display';
                 screenVideo.id = `screen${participant.client_ip}`;
+                screenVideo.src = '/static/screen_off.png';  // 设置默认图片
 
                 const cameraContainer = document.createElement('div');
                 cameraContainer.className = 'camera-container';
@@ -355,15 +356,12 @@
                 const cameraVideo = document.createElement('img');
                 cameraVideo.className = 'user-camera';
                 cameraVideo.id = `camera${participant.client_ip}`;
+                cameraVideo.src = '/static/camera_off.png';  // 设置默认图片
 
                 cameraContainer.appendChild(cameraVideo);
                 videoContainer.appendChild(screenVideo);
                 videoContainer.appendChild(cameraContainer);
                 videoGrid.appendChild(videoContainer);
-
-                // 设置视频流
-                setupVideoStream(screenVideo, participant.client_ip, 'screen');
-                setupVideoStream(cameraVideo, participant.client_ip, 'camera');
             });
 
             // 更新分页按钮状态
@@ -387,43 +385,57 @@
         });
 
 
-        // 换现有的simulateVideoStream函数
-        function setupVideoStream(videoElement, userIP, streamType) {
-            const eventSource = new EventSource(`/api/video_feed/${streamType}`);
-
-            // 设置默认图片
-            videoElement.onerror = function () {
-                videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
-            };
-
-            // 初始显示默认图片
-            videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+        // 替换现有的setupVideoStream函数
+        function setupVideoStreams() {
+            const eventSource = new EventSource('/api/video_streams');
 
             eventSource.onmessage = function (event) {
                 const data = JSON.parse(event.data);
+                console.log('Received video stream data:', data); // 添加调试信息
+                console.log(participants);
+                // 更新所有视频元素
+                participants.forEach(participant => {
+                    const cameraElement = document.getElementById(`camera${participant.client_ip}`);
+                    const screenElement = document.getElementById(`screen${participant.client_ip}`);
 
-                // 检查这个视频流是否属于当前视频元素
-                const elementId = `${streamType}${userIP}`;
-                if (videoElement.id === elementId) {
-                    if (data.msg == "ok") {
-                        // 更新视频帧
-                        videoElement.src = `data:image/jpeg;base64,${data.frame}`;
-                    } else {
-                        // 如果没有帧数据，显示默认图片
-                        videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+                    if (cameraElement) {
+                        if (data.camera && data.camera.client_ip === participant.client_ip && data.camera.frame) {
+                            cameraElement.src = `data:image/jpeg;base64,${data.camera.frame}`;
+                        } else {
+                            cameraElement.src = '/static/camera_off.png';
+                        }
                     }
-                }
+
+                    if (screenElement) {
+                        if (data.screen && data.screen.client_ip === participant.client_ip && data.screen.frame) {
+                            screenElement.src = `data:image/jpeg;base64,${data.screen.frame}`;
+                        } else {
+                            screenElement.src = '/static/screen_off.png';
+                        }
+                    }
+                });
             };
 
             eventSource.onerror = function (error) {
-                console.error('Video stream error:', error);
-                // 发生错误时显示默认图片
-                videoElement.src = streamType === 'camera' ? '/static/camera_off.png' : '/static/screen_off.png';
+                console.error('Video streams error:', error);
                 eventSource.close();
             };
 
             return eventSource;
         }
+
+        // 在页面加载时初始化视频流
+        let videoEventSource;
+        document.addEventListener('DOMContentLoaded', function () {
+            videoEventSource = setupVideoStreams();
+        });
+
+        // 在页面卸载时关闭连接
+        window.addEventListener('beforeunload', function () {
+            if (videoEventSource) {
+                videoEventSource.close();
+            }
+        });
 
         // 控制按钮事件监听
         document.getElementById('toggleCamera').addEventListener('click', function () {

@@ -81,32 +81,40 @@ class ConferenceServer:
                     header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    audio_length, audio_time, audio_id, audio_ip = self.unpack_object(header)
+                    audio_length, audio_time, audio_id, audio_ip = self.unpack_object(
+                        header
+                    )
                     audio_data = self.receive_object(reader, audio_length)
                     print(f"Received audio data: {len(audio_data)} bytes")
                     for client_conn in self.client_tcps_audio.values():
-                        if client_conn == reader: # debug only
-                        # if client_conn != reader:  # Don't send back to the sender
+                        if client_conn == reader:  # debug only
+                            # if client_conn != reader:  # Don't send back to the sender
                             client_conn.send(header)
                             client_conn.send(audio_data)
-                            print(f"Successfully forwarded audio data to {client_conn.getpeername()}")
+                            print(
+                                f"Successfully forwarded audio data to {client_conn.getpeername()}"
+                            )
 
             except Exception as e:
                 print(f"[Error] Audio handling error: {str(e)}")
         elif data_type == "screen":
             try:
                 while self.running:
-                    header = self.receive_object(reader, HEADER_LENGTH)  
+                    header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    screen_length, screen_time, screen_id, screen_ip = self.unpack_object(header)
+                    screen_length, screen_time, screen_id, screen_ip = (
+                        self.unpack_object(header)
+                    )
                     screen_data = self.receive_object(reader, screen_length)
                     print(f"Received screen data: {len(screen_data)} bytes")
                     for client_conn in self.client_tcps_screen.values():
                         # if client_conn != reader:
                         client_conn.send(header)
                         client_conn.send(screen_data)
-                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        print(
+                            f"Successfully forwarded camera data to {client_conn.getpeername()}"
+                        )
             except Exception as e:
                 print(f"[Error] Camera handling error: {str(e)}")
         elif data_type == "camera":
@@ -115,14 +123,18 @@ class ConferenceServer:
                     header = self.receive_object(reader, HEADER_LENGTH)
                     if not header:
                         break
-                    camera_length, camera_time, camera_id, camera_ip = self.unpack_object(header)
+                    camera_length, camera_time, camera_id, camera_ip = (
+                        self.unpack_object(header)
+                    )
                     data = self.receive_object(reader, camera_length)
                     print(f"Received camera data: {len(data)} bytes")
                     for client_conn in self.client_tcps_camera.values():
                         # if client_conn != reader:
                         client_conn.send(header)
                         client_conn.send(data)
-                        print(f"Successfully forwarded camera data to {client_conn.getpeername()}")
+                        print(
+                            f"Successfully forwarded camera data to {client_conn.getpeername()}"
+                        )
             except Exception as e:
                 print(f"[Error] Camera handling error: {str(e)}")
         elif data_type == "control":
@@ -482,5 +494,5 @@ class MainServer:
 
 if __name__ == "__main__":
 
-    server = MainServer(SERVER_IP_LOCAL, MAIN_SERVER_PORT, CONF_SERVE_PORTS) 
+    server = MainServer(SERVER_IP_PUBLIC_TJL, MAIN_SERVER_PORT, CONF_SERVE_PORTS)
     server.start()
