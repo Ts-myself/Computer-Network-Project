@@ -193,7 +193,7 @@ class ConferenceClient:
             if response.status_code == 200:
 
                 self.sock_info.close()
-                self.sock_control.close()
+                # self.sock_control.close()
                 self.sock_msg.close()
                 self.sock_audio.close()
                 self.sock_camera.close()
@@ -258,31 +258,31 @@ class ConferenceClient:
         except Exception as e:
             print(f"[Error] Failed to receive message: {str(e)}")
 
-    def send_control(self, message, time_stamp):
-        self.last_control_screen_time = time_stamp
-        control_message = message
-        control_message = struct.pack(">I", control_message)
-        control_message += struct.pack(">d", time_stamp)
-        self.sock_control.send(control_message)
+    # def send_control(self, message, time_stamp):
+    #     self.last_control_screen_time = time_stamp
+    #     control_message = message
+    #     control_message = struct.pack(">I", control_message)
+    #     control_message += struct.pack(">d", time_stamp)
+    #     self.sock_control.send(control_message)
 
-    def recv_control(self):
-        print("[INFO] Starting control receiving...")
-        try:
-            while self.on_meeting:
-                control_message = self.sock_control.recv(12)
-                message = struct.unpack(">I", control_message[:4])[0]
-                time_stamp = struct.unpack(">d", control_message[4:])[0]
-                print(f"Received control message: {message}")
-                if message == 1:
-                    self.screen_sleep_time += SCREEN_SLEEP_INCREASE
-                    print(f"Screen sleep time: {self.screen_sleep_time}")
-                elif message == 2:
-                    self.camera_sleep_time += CAMERA_SLEEP_INCREASE
-                    print(f"Camera sleep time: {self.camera_sleep_time}")
-                else:
-                    pass
-        except Exception as e:
-            print(f"[Error] Failed to receive control message: {str(e)}")
+    # def recv_control(self):
+    #     print("[INFO] Starting control receiving...")
+    #     try:
+    #         while self.on_meeting:
+    #             control_message = self.sock_control.recv(12)
+    #             message = struct.unpack(">I", control_message[:4])[0]
+    #             time_stamp = struct.unpack(">d", control_message[4:])[0]
+    #             print(f"Received control message: {message}")
+    #             if message == 1:
+    #                 self.screen_sleep_time += SCREEN_SLEEP_INCREASE
+    #                 print(f"Screen sleep time: {self.screen_sleep_time}")
+    #             elif message == 2:
+    #                 self.camera_sleep_time += CAMERA_SLEEP_INCREASE
+    #                 print(f"Camera sleep time: {self.camera_sleep_time}")
+    #             else:
+    #                 pass
+    #     except Exception as e:
+    #         print(f"[Error] Failed to receive control message: {str(e)}")
 
     def send_object(self, object, connection):
         try:
@@ -568,7 +568,7 @@ class ConferenceClient:
             #     time.sleep(CHUNK / RATE)
 
     def create_conference_conn(self):
-        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -577,8 +577,8 @@ class ConferenceClient:
         host = self.client_ip
         print(f"{host}")
 
-        self.sock_control.bind((host, SERVER_CONTROL_PORT))
-        self.sock_control.listen(5)
+        # self.sock_control.bind((host, SERVER_CONTROL_PORT))
+        # self.sock_control.listen(5)
 
         self.sock_msg.bind((host, SERVER_MSG_PORT))
         self.sock_msg.listen(5)
@@ -601,8 +601,8 @@ class ConferenceClient:
             self.on_meeting = False
         finally:
             pass
-        conn,addr = self.sock_control.accept()
-        self.sock_control = conn
+        # conn,addr = self.sock_control.accept()
+        # self.sock_control = conn
         conn,addr = self.sock_msg.accept()
         self.sock_msg = conn
         conn,addr = self.sock_camera.accept()
@@ -628,8 +628,8 @@ class ConferenceClient:
         self.is_streaming = True
     def p2p_quit(self):
         self.on_meeting = False
-        self.sock_control.close()
-        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # self.sock_control.close()
+        # self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg.close()
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_camera.close()
@@ -645,8 +645,8 @@ class ConferenceClient:
         host = self.client_ip
         print(f"{host}")
 
-        self.sock_control.bind((host, SERVER_CONTROL_PORT))
-        self.sock_control.listen(5)
+        # self.sock_control.bind((host, SERVER_CONTROL_PORT))
+        # self.sock_control.listen(5)
 
         self.sock_msg.bind((host, SERVER_MSG_PORT))
         self.sock_msg.listen(5)
@@ -660,8 +660,8 @@ class ConferenceClient:
         self.sock_audio.bind((host, SERVER_AUDIO_PORT))
         self.sock_audio.listen(5)
 
-        conn,addr = self.sock_control.accept()
-        self.sock_control = conn
+        # conn,addr = self.sock_control.accept()
+        # self.sock_control = conn
         conn,addr = self.sock_msg.accept()
         self.sock_msg = conn
         conn,addr = self.sock_camera.accept()
@@ -747,7 +747,7 @@ class ConferenceClient:
             pass
     def start_conference(self):
 
-        self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # self.sock_control = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_info = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_msg = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock_camera = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -755,7 +755,7 @@ class ConferenceClient:
         self.sock_audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
-            self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
+            # self.sock_control.connect((self.server_ip, SERVER_CONTROL_PORT))
             self.sock_info.connect((SERVER_IP, SERVER_INFO_PORT))
             self.sock_msg.connect((self.server_ip, SERVER_MSG_PORT))
             self.sock_camera.connect((self.server_ip, SERVER_CAMERA_PORT))
@@ -763,7 +763,7 @@ class ConferenceClient:
             self.sock_audio.connect((self.server_ip, SERVER_AUDIO_PORT))
 
             # Start control thread
-            threading.Thread(target=self.recv_control).start()
+            # threading.Thread(target=self.recv_control).start()
 
             # Start info thread
             threading.Thread(target=self.recv_info).start()
