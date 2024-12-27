@@ -386,7 +386,7 @@ class ConferenceClient:
                     self.current_screen_data["client_ip"] = screen_ip
                     self.current_screen_data["id"] = screen_id
                     # print("11111111111111111111111111111111111111111111111")
-                print(f"the source IP of the data {self.server_ip} and the destionation IP of the data {self.host}")
+                print(f"the source IP of the data {self.server_ip} and the destionation IP of the data {self.client_ip}")
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
 
