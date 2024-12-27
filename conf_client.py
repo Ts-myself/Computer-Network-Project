@@ -65,6 +65,12 @@ class ConferenceClient:
         self.ip = struct.pack(">4s", socket.inet_aton(self.client_ip))
 
         self.client_info = {}
+        self.sock_msg = None
+        self.sock_audio = None
+        self.sock_camera = None
+        self.sock_screen = None
+        self.sock_info = None
+
         self.input_stream = None
         # audio
         self.audio = pyaudio.PyAudio()
@@ -157,7 +163,7 @@ class ConferenceClient:
                     self.server_ip = data["clients"]
                     self.start_conference()
                     # test
-                    self.reconnect()
+                    # self.reconnect()
                 elif data['mode'] == "p2p2cs":
                     self.mode = "cs"
                     self.conference_id = conference_id
@@ -204,6 +210,7 @@ class ConferenceClient:
         try:
             while self.on_meeting:
                 data = self.sock_info.recv(BUFFER_SIZE)
+                print(f"[INFO] the server ip is: {SERVER_IP}")
                 if data:
                     info_data = json.loads(data.decode())
                     mode = info_data['mode']
@@ -234,6 +241,7 @@ class ConferenceClient:
                     print(f"[INFO] Received info: {info_data}")
                     del info_data['mode']
                     self.client_info = info_data
+            
         except Exception as e:
             print(f"[Error] Failed to receive info: {str(e)}")
 
@@ -378,7 +386,7 @@ class ConferenceClient:
                     self.current_screen_data["client_ip"] = screen_ip
                     self.current_screen_data["id"] = screen_id
                     # print("11111111111111111111111111111111111111111111111")
-
+                print(f"the source IP of the data {self.server_ip} and the destionation IP of the data {self.host}")
         except Exception as e:
             print(f"[Error] Failed to receive screen data: {str(e)}")
 
@@ -692,17 +700,26 @@ class ConferenceClient:
             self.sock_audio_tmp.connect((self.server_ip, SERVER_AUDIO_PORT))
             self.on_meeting = False
             self.is_streaming = False
-            if self.cap.isOpened():
+            print("fewwefwefwefewfewfwefewfewfwefwefewfwefewf")
+            if self.cap is not None and self.cap.isOpened():
                 self.cap.release()
-            self.input_stream.stop_stream()
-            self.input_stream.close()
-            self.sock_msg.close()
+            if self.input_stream is not None:
+                self.input_stream.stop_stream()
+                self.input_stream.close()
+            print("fewwefwefwefewfewfwefewfewfwefwefewfwefewf")
+            if self.sock_msg is not None:
+                self.sock_msg.close()
+            print("fewwefwefwefewfewfwefewfewfwefwefewfwefewf")
             self.sock_msg = self.sock_msg_tmp
-            self.sock_camera.close()
+            if self.sock_camera is not None:
+                self.sock_camera.close()
             self.sock_camera = self.sock_camera_tmp
-            self.sock_screen.close()
+            if self.sock_screen is not None:
+                self.sock_screen.close()
+            print("fewwefwefwefewfewfwefewfewfwefwefewfwefewf")
             self.sock_screen = self.sock_screen_tmp
-            self.sock_audio.close()
+            if self.sock_audio is not None:
+                self.sock_audio.close()
             self.sock_audio = self.sock_audio_tmp
             self.on_meeting = True
             print("fewwefwefwefewfewfwefewfewfwefwefewfwefewf")
